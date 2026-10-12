@@ -367,7 +367,9 @@ def sa_kubeconfig(cluster: str, body: SaTokenBody, request: Request,
     server = md.publicApiUrl or md.serverUrl
     from ruamel.yaml import YAML
     yaml = YAML(typ="safe", pure=True)
-    stored = yaml.load(kc)
+    # ruamel's safe loader (typ="safe"), not PyYAML's unsafe load: no arbitrary
+    # object instantiation is possible.
+    stored = yaml.load(kc)  # nosec B506
     ca_b64 = stored["clusters"][0]["cluster"].get("certificate-authority-data", "")
 
     expires = expiry_from_ttl(token_resp["ttlSeconds"])
@@ -425,7 +427,9 @@ def user_csr(cluster: str, body: CsrBody, request: Request,
 
     from ruamel.yaml import YAML
     yaml = YAML(typ="safe", pure=True)
-    stored = yaml.load(kc)
+    # ruamel's safe loader (typ="safe"), not PyYAML's unsafe load: no arbitrary
+    # object instantiation is possible.
+    stored = yaml.load(kc)  # nosec B506
     ca_b64 = stored["clusters"][0]["cluster"].get("certificate-authority-data", "")
     expires = expiry_from_ttl(result["ttlSeconds"])
     audit.emit("kubeconfig.generate", cluster=cluster, target=body.commonName,

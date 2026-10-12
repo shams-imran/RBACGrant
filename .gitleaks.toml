@@ -1,0 +1,22 @@
+# Gitleaks configuration.
+#
+# The default ruleset is used unchanged — this file only allowlists paths whose
+# credential-shaped strings are deliberate: test fixtures that exist to prove
+# the auth and secret-scanning code rejects them, and documentation
+# placeholders. No application code is exempted.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Test fixtures and documentation placeholders"
+paths = [
+  # Constants such as the canary admin password, used to drive the login,
+  # lockout and profile secret-scan tests.
+  '''backend/tests/.*\.py''',
+  # Commented-out EXAMPLE values; this file ships no real configuration.
+  '''\.env\.example''',
+  # An illustrative Argon2 hash and a placeholder Vault token, so the
+  # setup instructions are followable.
+  '''README\.md''',
+  '''docs/RELEASING\.md''',
+]

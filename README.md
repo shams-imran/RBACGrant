@@ -62,28 +62,45 @@ dry-run, apply, live RBAC review and `can-i`.
 
 ## Quick start
 
-### Try it in 30 seconds (offline, nothing stored)
+### Docker
 
 ```bash
 docker run --rm -p 127.0.0.1:8080:8080 \
-  -e RBAC_UI_AUTH_MODE=none \
+  -e RBAC_UI_ADMIN_PASSWORD='pick-a-password-here' \
+  -e RBAC_UI_ALLOW_INSECURE_HTTP=true \
   shamsimran/rbacgrant:latest
 ```
 
-Open <http://127.0.0.1:8080>. No login, no cluster, no data written anywhere —
-build roles, lint them, download YAML.
+Open <http://127.0.0.1:8080> and log in as `admin`. No cluster is registered, so
+nothing is stored anywhere — build roles, lint them, download YAML.
 
-> `AUTH_MODE=none` is allowed **only** on loopback with no cluster store. The
-> server refuses to start in any other combination, so you can't accidentally
-> expose an unauthenticated instance.
+Both flags are needed because a container binds `0.0.0.0` internally so that
+`-p` can reach it:
 
-### From source
+- `RBAC_UI_ALLOW_INSECURE_HTTP=true` acknowledges there is no TLS *inside* the
+  container. Publishing on `127.0.0.1:8080` keeps it off your network; in a real
+  deployment you terminate TLS in front and set `RBAC_UI_PUBLIC_URL` to the
+  HTTPS address.
+- A password is required because the no-login mode below refuses any
+  non-loopback bind address, which a container always has.
+
+For a throwaway password, `RBAC_UI_ADMIN_PASSWORD` is hashed in memory at
+startup and dropped from the environment. For anything you keep, use
+`RBAC_UI_ADMIN_PASSWORD_HASH` — see
+[generating the hash](#generating-the-admin-password-hash).
+
+### From source — no login at all
 
 ```bash
 git clone https://github.com/shams-imran/RBACGrant.git
 cd RBACGrant
 RBAC_UI_AUTH_MODE=none make run      # http://127.0.0.1:8080
 ```
+
+This is the Personal profile: no login, no cluster, nothing written anywhere.
+It binds `127.0.0.1` directly, which is the one situation where the server
+permits authentication to be switched off — so it works from source but, by
+design, **not** in a container.
 
 `make run` builds the frontend, generates the offline API catalog and starts the
 server. First run takes a few minutes; after that it's seconds.
@@ -341,8 +358,9 @@ docker run -d --name rbacgrant \
   -v rbacgrant-data:/data \
   -v /etc/rbacgrant/store.key:/etc/rbacgrant/store.key:ro \
   --read-only \
-  --tmpfs /run/rbac-ui:rw,noexec,nosuid,size=16m \
+  --tmpfs /run/rbac-ui:rw,noexec,nosuid,size=16m,mode=0700,uid=10001,gid=10001 \
   -e RBAC_UI_RUNTIME_DIR=/run/rbac-ui \
+  -e RBAC_UI_ALLOW_INSECURE_HTTP=true \
   --cap-drop ALL \
   --security-opt no-new-privileges \
   --user 10001 \

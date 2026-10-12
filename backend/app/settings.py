@@ -44,8 +44,11 @@ def parse_size(value: str | int) -> int:
 
 def _default_runtime_dir() -> str:
     # Linux: tmpfs. macOS has no /dev/shm: 0700 dir under $TMPDIR.
-    if sys.platform == "linux" and os.path.isdir("/dev/shm"):
-        return "/dev/shm/k8s-rbac-builder"
+    # nosec B108 - deliberate: /dev/shm is tmpfs so decrypted credentials never
+    # touch disk. The directory is created 0700 and its mode is verified on use
+    # (see k8s/client_factory.ensure_runtime_dir); it is not a shared temp path.
+    if sys.platform == "linux" and os.path.isdir("/dev/shm"):  # nosec B108
+        return "/dev/shm/k8s-rbac-builder"  # nosec B108
     return str(Path(tempfile.gettempdir()) / "k8s-rbac-builder-runtime")
 
 

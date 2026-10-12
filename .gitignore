@@ -2,9 +2,12 @@
 .env
 .env.*
 !.env.example
-data/
+/data/
+/deploy/data/
 *.kubeconfig
-kubeconfig*
+/kubeconfig*
+*-kubeconfig.yaml
+kubeconfig-*.yaml
 *.kcfg.enc
 *.key
 *.pem

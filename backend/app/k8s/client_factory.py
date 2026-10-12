@@ -22,8 +22,30 @@ APP_VERSION = "0.1.0"
 
 def ensure_runtime_dir(settings: Settings) -> Path:
     path = Path(settings.runtime_dir)
-    path.mkdir(parents=True, exist_ok=True, mode=0o700)
-    os.chmod(path, 0o700)
+    try:
+        path.mkdir(parents=True, exist_ok=True, mode=0o700)
+    except PermissionError as exc:
+        raise RuntimeError(
+            f"cannot create the runtime dir {path}: its parent is not writable by "
+            "this user. When running as a non-root container user, mount it owned "
+            "by that user, e.g. --tmpfs /run/rbac-ui:rw,noexec,nosuid,size=16m,"
+            "mode=0700,uid=10001,gid=10001"
+        ) from exc
+
+    # The directory may be supplied by the platform (a tmpfs mount, a Kubernetes
+    # emptyDir) and owned by another user, so chmod is not always permitted.
+    # Only tighten it when it is actually too open.
+    if stat.S_IMODE(path.stat().st_mode) & 0o077:
+        try:
+            os.chmod(path, 0o700)
+        except PermissionError as exc:
+            raise RuntimeError(
+                f"runtime dir {path} is group- or world-accessible and this user "
+                "cannot tighten it (the mount is owned by someone else). Mount it "
+                "0700 and owned by the runtime user, e.g. --tmpfs /run/rbac-ui:"
+                "rw,noexec,nosuid,size=16m,mode=0700,uid=10001,gid=10001"
+            ) from exc
+
     mode = stat.S_IMODE(path.stat().st_mode)
     if mode & 0o077:
         raise RuntimeError(f"runtime dir {path} must be 0700")
