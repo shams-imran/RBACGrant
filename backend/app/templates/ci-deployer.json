@@ -1,0 +1,22 @@
+{
+  "title": "CI/CD deployer (ServiceAccount)",
+  "description": "ServiceAccount that can deploy workloads in one namespace.",
+  "variables": ["env", "namespace"],
+  "bundle": {
+    "serviceAccounts": [{"name": "ci-deployer", "namespace": "${namespace}", "automountServiceAccountToken": false}],
+    "roles": [{
+      "kind": "Role",
+      "metadata": {"name": "ci-deployer", "namespace": "${namespace}"},
+      "rules": [
+        {"apiGroups": ["apps"], "resources": ["deployments", "statefulsets", "daemonsets"], "verbs": ["get", "list", "watch", "create", "update", "patch"]},
+        {"apiGroups": [""], "resources": ["services", "configmaps"], "verbs": ["get", "list", "watch", "create", "update", "patch"]},
+        {"apiGroups": ["batch"], "resources": ["jobs"], "verbs": ["get", "list", "watch", "create", "delete"]}
+      ]
+    }],
+    "bindings": [{
+      "kind": "RoleBinding", "name": "ci-deployer", "namespaces": ["${namespace}"],
+      "roleRef": {"kind": "Role", "name": "ci-deployer"},
+      "subjects": [{"kind": "ServiceAccount", "name": "ci-deployer", "namespace": "${namespace}"}]
+    }]
+  }
+}

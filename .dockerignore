@@ -1,0 +1,47 @@
+# ── Secrets — must never enter the build context ───────────────────────────
+.env*
+!.env.example
+data/
+*.kubeconfig
+kubeconfig*
+*.kcfg.enc
+*.key
+*.pem
+*.p12
+*.pfx
+vault-token*
+audit*.log
+*.log
+
+# ── Build outputs & caches (rebuilt inside the image) ───────────────────────
+.venv/
+frontend/node_modules/
+frontend/dist/
+*.tsbuildinfo
+**/__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+coverage/
+
+# ── Not needed inside the image ─────────────────────────────────────────────
+.git/
+.github/
+.gitignore
+.pre-commit-config.yaml
+backend/tests/
+deploy/
+profiles/
+Makefile
+README.md
+REQUIREMENTS_v3.md
+SECURITY.md
+
+# ── Editors & OS ─────────────────────────────────────────────────────────────
+.DS_Store
+.idea/
+.vscode/
+*.swp

@@ -1,0 +1,41 @@
+{
+  "title": "Operator bootstrap — restricted (recommended)",
+  "description": "Restricted operator: no escalate; bind limited by resourceNames to approved ClusterRoles; serviceaccounts/token granted per namespace, never in kube-system. The tool can then only hand out pre-approved roles.",
+  "variables": ["namespace"],
+  "bundle": {
+    "serviceAccounts": [{"name": "rbac-builder-operator", "namespace": "rbac-builder", "automountServiceAccountToken": false}],
+    "roles": [
+      {
+        "kind": "ClusterRole",
+        "metadata": {"name": "rbac-builder-operator"},
+        "rules": [
+          {"apiGroups": ["rbac.authorization.k8s.io"], "resources": ["roles", "clusterroles", "rolebindings", "clusterrolebindings"], "verbs": ["get", "list", "watch", "create", "update", "patch", "delete"]},
+          {"apiGroups": ["rbac.authorization.k8s.io"], "resources": ["clusterroles"], "resourceNames": ["view", "edit", "team-developer"], "verbs": ["bind"]},
+          {"apiGroups": [""], "resources": ["namespaces"], "verbs": ["get", "list", "watch"]},
+          {"apiGroups": [""], "resources": ["serviceaccounts"], "verbs": ["get", "list", "watch", "create", "delete"]},
+          {"apiGroups": ["apiextensions.k8s.io"], "resources": ["customresourcedefinitions"], "verbs": ["get", "list", "watch"]},
+          {"apiGroups": ["authorization.k8s.io"], "resources": ["subjectaccessreviews"], "verbs": ["create"]}
+        ]
+      },
+      {
+        "kind": "Role",
+        "metadata": {"name": "rbac-builder-token-minter", "namespace": "${namespace}"},
+        "rules": [
+          {"apiGroups": [""], "resources": ["serviceaccounts/token"], "verbs": ["create"]}
+        ]
+      }
+    ],
+    "bindings": [
+      {
+        "kind": "ClusterRoleBinding", "name": "rbac-builder-operator-binding", "namespaces": [],
+        "roleRef": {"kind": "ClusterRole", "name": "rbac-builder-operator"},
+        "subjects": [{"kind": "ServiceAccount", "name": "rbac-builder-operator", "namespace": "rbac-builder"}]
+      },
+      {
+        "kind": "RoleBinding", "name": "rbac-builder-token-minter", "namespaces": ["${namespace}"],
+        "roleRef": {"kind": "Role", "name": "rbac-builder-token-minter"},
+        "subjects": [{"kind": "ServiceAccount", "name": "rbac-builder-operator", "namespace": "rbac-builder"}]
+      }
+    ]
+  }
+}

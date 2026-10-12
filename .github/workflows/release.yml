@@ -1,0 +1,193 @@
+# Release: build a multi-arch image, push it to Docker Hub by digest, sign it
+# with cosign (keyless, GitHub OIDC), and attach an SBOM and build provenance.
+#
+# Trigger: push a semver tag.
+#     git tag -a v1.0.0 -m "v1.0.0" && git push origin v1.0.0
+#
+# Required repository secrets:
+#     DOCKERHUB_USERNAME   Docker Hub account (or org) name
+#     DOCKERHUB_TOKEN      Docker Hub access token with Read/Write scope
+# Required repository variable (Settings → Variables):
+#     IMAGE_NAME           shamsimran/rbacgrant
+name: release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Version to build, e.g. v1.0.0"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Re-run the full test suite against the tagged commit. A release that
+  # skips its own tests is not a release.
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -e "backend[dev]"
+      - run: cd backend && python -m app.catalog.generate --builtin
+      - run: cd backend && python -m pytest tests/ -q
+      - uses: actions/setup-node@v4
+        with: { node-version: "22", cache: npm, cache-dependency-path: frontend/package-lock.json }
+      - run: cd frontend && npm ci
+      - run: cd frontend && npx tsc -b && npm run test && npm run build
+
+  build:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write        # keyless signing via GitHub's OIDC token
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Derive tags and labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ vars.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
+          labels: |
+            org.opencontainers.image.title=RBACGrant
+            org.opencontainers.image.description=Kubernetes RBAC manifest and kubeconfig builder with a risk linter
+            org.opencontainers.image.licenses=MIT
+
+      - name: Build and push
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: mode=max      # SLSA provenance attestation
+          sbom: true                # SPDX SBOM attestation
+
+      # Scan the exact artifact that was pushed, by digest. A release that
+      # ships known HIGH/CRITICAL CVEs should fail here, not in production.
+      - name: Scan the pushed image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ vars.IMAGE_NAME }}@${{ steps.push.outputs.digest }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - uses: sigstore/cosign-installer@v3
+
+      # Keyless: the signing certificate binds this repository, workflow and tag
+      # to the signature. Nothing secret is stored anywhere.
+      - name: Sign the image
+        # --recursive also signs each per-architecture manifest, not just the
+        # index — a node pulling the arm64 digest can verify it too.
+        run: cosign sign --yes --recursive "${IMAGE}@${DIGEST}"
+        env:
+          IMAGE: ${{ vars.IMAGE_NAME }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+
+      - name: Generate a CycloneDX SBOM file
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ vars.IMAGE_NAME }}@${{ steps.push.outputs.digest }}
+          format: cyclonedx-json
+          output-file: sbom.cdx.json
+
+      - name: Attach the SBOM to the image
+        run: cosign attest --yes --type cyclonedx --predicate sbom.cdx.json "${IMAGE}@${DIGEST}"
+        env:
+          IMAGE: ${{ vars.IMAGE_NAME }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+
+      - name: Verify the published manifest list
+        run: |
+          echo "Platforms actually published:"
+          docker buildx imagetools inspect "${IMAGE}@${DIGEST}" \
+            --format '{{range .Manifest.Manifests}}{{.Platform.OS}}/{{.Platform.Architecture}}{{"\n"}}{{end}}'
+        env:
+          IMAGE: ${{ vars.IMAGE_NAME }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+
+      - name: Write the digest into the job summary
+        run: |
+          {
+            echo "## \`${IMAGE}:${VERSION}\`"
+            echo
+            echo '```'
+            echo "${IMAGE}@${DIGEST}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          IMAGE: ${{ vars.IMAGE_NAME }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.cdx.json
+
+  github-release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: sbom }
+
+      - name: Publish the GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: sbom.cdx.json
+          body: |
+            ## Image
+
+            ```
+            docker pull ${{ vars.IMAGE_NAME }}:${{ needs.build.outputs.version }}
+            ```
+
+            Pinned by digest — this is what was actually published:
+
+            ```
+            ${{ vars.IMAGE_NAME }}@${{ needs.build.outputs.digest }}
+            ```
+
+            ## Verify it
+
+            ```bash
+            cosign verify \
+              --certificate-identity-regexp '^https://github.com/${{ github.repository }}/\.github/workflows/release\.yml@refs/tags/v' \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              ${{ vars.IMAGE_NAME }}@${{ needs.build.outputs.digest }}
+            ```
+
+            Built from `${{ github.sha }}` by
+            [this run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).

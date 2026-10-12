@@ -1,0 +1,46 @@
+# ── Secrets and credentials — never commit ─────────────────────────────────
+.env
+.env.*
+!.env.example
+data/
+*.kubeconfig
+kubeconfig*
+*.kcfg.enc
+*.key
+*.pem
+*.p12
+*.pfx
+vault-token*
+audit*.log
+*.log
+
+# ── Python ──────────────────────────────────────────────────────────────────
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# ── Frontend ────────────────────────────────────────────────────────────────
+node_modules/
+frontend/dist/
+*.tsbuildinfo
+coverage/
+.vite/
+
+# ── Runtime data (saved profiles/templates live here, keep the dir) ────────
+profiles/*
+!profiles/.gitkeep
+
+# ── Editors & OS ────────────────────────────────────────────────────────────
+.DS_Store
+.idea/
+.vscode/
+*.swp

@@ -1,0 +1,152 @@
+# RBACGrant on Kubernetes — hardened single-replica deployment.
+#
+# Before applying:
+#   1. Build/push the image somewhere the cluster can pull it, then change
+#      spec.template.spec.containers[0].image below.
+#   2. Create the config secret from your .env (edit PUBLIC_URL etc. first):
+#        kubectl -n rbacgrant create secret generic rbacgrant-env \
+#          --from-env-file=.env
+#   3. Create the store-key secret (the AES key for the local cluster store):
+#        kubectl -n rbacgrant create secret generic rbacgrant-store-key \
+#          --from-file=store.key=/path/to/store.key
+#   4. kubectl apply -f deploy/kubernetes.yaml
+#
+# TLS: this manifest serves plain HTTP inside the cluster and expects TLS to
+# terminate at your Ingress / LoadBalancer (hence ALLOW_INSECURE_HTTP=true
+# below). Set RBAC_UI_PUBLIC_URL in the env secret to the https:// URL users
+# will open, and RBAC_UI_ALLOWED_HOSTS to its hostname.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rbacgrant
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: rbacgrant
+  namespace: rbacgrant
+# The app talks to managed clusters with the kubeconfigs you upload, not with
+# this in-cluster identity — so no token is mounted and no RBAC is bound.
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rbacgrant-data
+  namespace: rbacgrant
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rbacgrant
+  namespace: rbacgrant
+  labels:
+    app.kubernetes.io/name: rbacgrant
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate # sessions and the RWO data volume want one pod at a time
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: rbacgrant
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: rbacgrant
+    spec:
+      serviceAccountName: rbacgrant
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: rbacgrant
+          image: shamsimran/rbacgrant:latest # pin by digest in production
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - secretRef:
+                name: rbacgrant-env
+          env:
+            # Explicit env wins over envFrom — these pin the values that must
+            # differ inside a pod, whatever the .env secret says.
+            - name: RBAC_UI_BIND_ADDR
+              value: 0.0.0.0
+            - name: RBAC_UI_ALLOW_INSECURE_HTTP
+              value: "true" # TLS terminates at the Ingress
+            - name: RBAC_UI_DATA_DIR
+              value: /data
+            - name: RBAC_UI_RUNTIME_DIR
+              value: /run/rbac-ui
+            - name: RBAC_UI_STORE_KEY_REF
+              value: file:/etc/rbac-ui/store.key
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: runtime
+              mountPath: /run/rbac-ui
+            - name: store-key
+              mountPath: /etc/rbac-ui
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 192Mi
+            limits:
+              memory: 512Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: rbacgrant-data
+        - name: runtime
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
+        - name: store-key
+          secret:
+            secretName: rbacgrant-store-key
+            defaultMode: 0400
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rbacgrant
+  namespace: rbacgrant
+  labels:
+    app.kubernetes.io/name: rbacgrant
+spec:
+  selector:
+    app.kubernetes.io/name: rbacgrant
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+

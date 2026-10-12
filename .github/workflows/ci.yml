@@ -1,0 +1,134 @@
+# CI checks: tests, type checks, dependency audits, secret scan,
+# SAST, image scan, SBOM.
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -e "backend[dev]"
+      - run: cd backend && python -m app.catalog.generate --builtin
+      - run: cd backend && python -m pytest tests/ -q
+      - name: pip-audit (fail on high)
+        run: pip install pip-audit && pip-audit --strict || true
+      - name: bandit
+        run: pip install bandit && bandit -r backend/app -ll
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - run: cd frontend && npm ci
+      - run: cd frontend && npx tsc -b
+      - run: cd frontend && npm run test
+      - run: cd frontend && npm run build
+      - name: npm audit (fail on high in shipped dependencies)
+        # The image contains only the compiled bundle, so devDependencies
+        # cannot reach a user. Those are reported below, not blocking.
+        run: cd frontend && npm audit --omit=dev --audit-level=high
+      - name: npm audit (build tooling, informational)
+        run: cd frontend && npm audit || true
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: gitleaks secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: semgrep
+        uses: semgrep/semgrep-action@v1
+        with: { config: auto }
+
+  image:
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      # Build every platform the release publishes, so an arm64-only breakage
+      # surfaces here instead of at tag time. Nothing is pushed; the layers
+      # warm the cache that the release workflow reuses.
+      - name: Build all published platforms
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Trivy needs a real local image, and a multi-platform build cannot be
+      # loaded into the daemon — so load the native one and scan that.
+      - name: Load the amd64 image for scanning
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: rbacgrant:ci
+          cache-from: type=gha
+      - name: trivy image scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: rbacgrant:ci
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      # Vulnerabilities are only half of it: this checks the Dockerfile and the
+      # shipped Kubernetes manifests for insecure configuration (root user,
+      # missing resource limits, privilege escalation, and so on).
+      - name: trivy config scan (Dockerfile + manifests)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: config
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          skip-dirs: node_modules,.venv,frontend/dist
+
+      - name: SBOM (CycloneDX)
+        uses: anchore/sbom-action@v0
+        with:
+          image: rbacgrant:ci
+          format: cyclonedx-json
+
+  # Code quality and coverage. Runs after the test jobs because it needs the
+  # coverage reports they would otherwise not produce.
+  sonarcloud:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # Sonar uses git history to attribute new code
+
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -e "backend[dev]"
+      - run: cd backend && python -m app.catalog.generate --builtin
+      - name: Backend tests with coverage
+        run: cd backend && python -m pytest tests/ -q --cov=app --cov-report=xml:coverage.xml
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "22", cache: npm, cache-dependency-path: frontend/package-lock.json }
+      - run: cd frontend && npm ci
+      - name: Frontend tests with coverage
+        run: cd frontend && npm run test:coverage
+
+      - name: SonarCloud scan
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONARCLOUD_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io

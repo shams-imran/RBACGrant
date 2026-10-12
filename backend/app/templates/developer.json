@@ -1,0 +1,22 @@
+{
+  "title": "Developer",
+  "description": "Namespace-scoped read-write on common workload resources, no secrets write.",
+  "variables": ["team", "env", "namespace"],
+  "bundle": {
+    "roles": [{
+      "kind": "Role",
+      "metadata": {"name": "${team}-developer", "namespace": "${namespace}"},
+      "rules": [
+        {"apiGroups": [""], "resources": ["pods", "pods/log", "services", "configmaps"], "verbs": ["get", "list", "watch", "create", "update", "patch", "delete"]},
+        {"apiGroups": ["apps"], "resources": ["deployments", "replicasets", "statefulsets"], "verbs": ["get", "list", "watch", "create", "update", "patch", "delete"]},
+        {"apiGroups": ["batch"], "resources": ["jobs", "cronjobs"], "verbs": ["get", "list", "watch", "create", "update", "patch", "delete"]}
+      ]
+    }],
+    "bindings": [{
+      "kind": "RoleBinding", "name": "${team}-developers", "namespaces": ["${namespace}"],
+      "roleRef": {"kind": "Role", "name": "${team}-developer"},
+      "subjects": [{"kind": "Group", "name": "${team}-developers"}]
+    }],
+    "serviceAccounts": []
+  }
+}

@@ -1,0 +1,74 @@
+/* — Red Dot Digital IT theme tokens. Light and dark values are the
+   WCAG-checked pairs from the requirements table. */
+:root {
+  --color-primary: #e52445;
+  --color-primary-hover: #cf1f3c;
+  --color-primary-active: #bd1e39;
+  --color-on-primary: #ffffff;
+  --color-primary-subtle: #ffebef;
+  --color-primary-subtle-border: #ffd6d6;
+  --color-bg: #ffffff;
+  --color-surface: #f7f7fd;
+  --color-text: #121926;
+  --color-text-muted: #6d658b;
+  --color-border: #e8eaed;
+  --color-border-input: #8c87a3;
+  --color-accent: #7a5cfa;
+  --color-info: #5b3fd9;
+  --color-danger: #b42318;
+  --color-danger-subtle: #fef3f2;
+  --color-danger-subtle-border: #fecdca;
+  --color-warning: #b54708;
+  --color-success: #027a48;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-heading: 'Poppins', var(--font-body);
+  --font-mono: 'Geist Mono', ui-monospace, 'SF Mono', monospace;
+}
+
+[data-mantine-color-scheme='dark'] {
+  --color-primary: #f64c6c;
+  --color-primary-hover: #ff6b84;
+  --color-primary-active: #e52445;
+  --color-on-primary: #060414;
+  --color-primary-subtle: rgba(229, 36, 69, 0.16);
+  --color-primary-subtle-border: rgba(229, 36, 69, 0.3);
+  --color-bg: #060414;
+  --color-surface: #121926;
+  --color-text: #e8eaed;
+  --color-text-muted: #a8a3bd;
+  --color-border: #1d1b26;
+  --color-border-input: #6b7385;
+  --color-accent: #9b85ff;
+  --color-info: #9b85ff;
+  --color-danger: #f97066;
+  --color-danger-subtle: rgba(249, 112, 102, 0.16);
+  --color-danger-subtle-border: rgba(249, 112, 102, 0.4);
+  --color-warning: #fdb022;
+  --color-success: #32d583;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+}
+
+h1, h2, h3, h4, h5 {
+  font-family: var(--font-heading);
+}
+
+code, pre, .monaco-editor {
+  font-family: var(--font-mono);
+}
+
+/* Focus rings 2px primary with 2px offset, visible in both themes. */
+*:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* Active-cluster banner keeps a 4px left stripe in the env colour. */
+.cluster-banner {
+  border-left: 4px solid var(--env-color, var(--color-border));
+  background: var(--color-surface);
+}

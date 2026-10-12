@@ -1,0 +1,14 @@
+{
+  "title": "Namespace admin",
+  "description": "Binds the built-in admin ClusterRole inside one namespace.",
+  "variables": ["team", "namespace"],
+  "bundle": {
+    "roles": [],
+    "bindings": [{
+      "kind": "RoleBinding", "name": "${team}-ns-admins", "namespaces": ["${namespace}"],
+      "roleRef": {"kind": "ClusterRole", "name": "admin"},
+      "subjects": [{"kind": "Group", "name": "${team}-admins"}]
+    }],
+    "serviceAccounts": []
+  }
+}

@@ -1,0 +1,6 @@
+# Secret scanning on every commit.
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks

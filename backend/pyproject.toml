@@ -1,0 +1,34 @@
+[project]
+name = "rbacgrant"
+version = "0.1.0"
+description = "Web GUI that builds Kubernetes RBAC manifests and kubeconfigs, with linting, guardrails and multi-cluster apply"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.8",
+    "pydantic-settings>=2.4",
+    "ruamel.yaml>=0.18",
+    "cryptography>=43",
+    "argon2-cffi>=23.1",
+    "hvac>=2.3",
+    "kubernetes>=30.1",
+    "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "httpx>=0.27", "pytest-asyncio>=0.24", "pytest-cov>=5"]
+
+[project.scripts]
+rbac-ui = "app.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

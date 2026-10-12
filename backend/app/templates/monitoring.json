@@ -1,0 +1,22 @@
+{
+  "title": "Monitoring (Prometheus scrape)",
+  "description": "Read access to pods, services, endpoints, nodes and /metrics.",
+  "variables": [],
+  "bundle": {
+    "serviceAccounts": [{"name": "prometheus", "namespace": "monitoring", "automountServiceAccountToken": false}],
+    "roles": [{
+      "kind": "ClusterRole",
+      "metadata": {"name": "prometheus-scrape"},
+      "rules": [
+        {"apiGroups": [""], "resources": ["pods", "services", "endpoints", "nodes"], "verbs": ["get", "list", "watch"]},
+        {"apiGroups": ["discovery.k8s.io"], "resources": ["endpointslices"], "verbs": ["get", "list", "watch"]},
+        {"nonResourceURLs": ["/metrics"], "verbs": ["get"], "apiGroups": [], "resources": []}
+      ]
+    }],
+    "bindings": [{
+      "kind": "ClusterRoleBinding", "name": "prometheus-scrape", "namespaces": [],
+      "roleRef": {"kind": "ClusterRole", "name": "prometheus-scrape"},
+      "subjects": [{"kind": "ServiceAccount", "name": "prometheus", "namespace": "monitoring"}]
+    }]
+  }
+}

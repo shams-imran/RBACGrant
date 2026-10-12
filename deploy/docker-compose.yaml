@@ -1,0 +1,45 @@
+# Hardened compose deployment. Publish on loopback ONLY.
+#
+#   cd deploy && docker compose up -d --build
+#
+# Configuration comes from the repo .env (env_file below). Two host paths are
+# tunable without editing this file:
+#   RBACGRANT_DATA_DIR   host dir for the encrypted cluster store (default ./data)
+#                        — point it at ~/.local/share/k8s-rbac-builder to reuse
+#                        the clusters already saved by `make run`
+#   RBACGRANT_STORE_KEY  host path of the AES store key (default
+#                        ~/.config/rbac-ui/store.key, matching .env)
+services:
+  rbacgrant:
+    image: shamsimran/rbacgrant:latest
+    build: ..
+    restart: unless-stopped
+    init: true
+    ports:
+      - "127.0.0.1:8080:8080"
+
+    # All settings load from the repo .env …
+    env_file: ../.env
+    # … except the few that must differ inside a container (these override it):
+    environment:
+      RBAC_UI_BIND_ADDR: 0.0.0.0            # .env says 127.0.0.1; mapped ports need 0.0.0.0
+      RBAC_UI_ALLOW_INSECURE_HTTP: "true"   # safe: published on 127.0.0.1 only (or TLS proxy)
+      RBAC_UI_DATA_DIR: /data
+      RBAC_UI_RUNTIME_DIR: /run/rbac-ui
+      RBAC_UI_STORE_KEY_REF: file:/etc/rbac-ui/store.key
+
+    volumes:
+      # Directory mount: the encrypted cluster store survives on the host.
+      - ${RBACGRANT_DATA_DIR:-./data}:/data
+      # The AES key, read-only, mounted where STORE_KEY_REF above expects it.
+      - ${RBACGRANT_DATA_DIR:-~/.config/rbac-ui/store.key}:/etc/rbac-ui/store.key:ro
+
+    # Immutable container: only /data and the runtime tmpfs are writable.
+    read_only: true
+    tmpfs:
+      - /run/rbac-ui:rw,noexec,nosuid,size=16m,mode=0700,uid=10001,gid=10001
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    user: "10001"
+    pids_limit: 256

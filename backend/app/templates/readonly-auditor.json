@@ -1,0 +1,23 @@
+{
+  "title": "Read-only auditor",
+  "description": "Cluster-wide read on everything except secrets.",
+  "variables": ["team"],
+  "bundle": {
+    "roles": [{
+      "kind": "ClusterRole",
+      "metadata": {"name": "${team}-auditor"},
+      "rules": [
+        {"apiGroups": [""], "resources": ["pods", "services", "configmaps", "namespaces", "serviceaccounts", "endpoints", "events", "nodes"], "verbs": ["get", "list", "watch"]},
+        {"apiGroups": ["apps"], "resources": ["deployments", "replicasets", "statefulsets", "daemonsets"], "verbs": ["get", "list", "watch"]},
+        {"apiGroups": ["batch"], "resources": ["jobs", "cronjobs"], "verbs": ["get", "list", "watch"]},
+        {"apiGroups": ["rbac.authorization.k8s.io"], "resources": ["roles", "clusterroles", "rolebindings", "clusterrolebindings"], "verbs": ["get", "list", "watch"]}
+      ]
+    }],
+    "bindings": [{
+      "kind": "ClusterRoleBinding", "name": "${team}-auditors", "namespaces": [],
+      "roleRef": {"kind": "ClusterRole", "name": "${team}-auditor"},
+      "subjects": [{"kind": "Group", "name": "${team}-auditors"}]
+    }],
+    "serviceAccounts": []
+  }
+}
