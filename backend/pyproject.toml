@@ -12,7 +12,11 @@ dependencies = [
     "cryptography>=43",
     "argon2-cffi>=23.1",
     "hvac>=2.3",
-    "kubernetes>=30.1",
+    # Upper bound deliberate: ApiClient.call_api is regenerated across major
+    # releases (36 -> 37 split it into param_serialize/call_api/
+    # response_deserialize). app/k8s/operations.py handles both, but a new
+    # major needs testing before it ships in the image.
+    "kubernetes>=30.1,<38",
     "python-multipart>=0.0.9",
 ]
 

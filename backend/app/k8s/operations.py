@@ -63,19 +63,44 @@ def _timeout(settings: Settings) -> int:
     return settings.k8s_timeout_s
 
 
+# v36 keys this map by int status; older generators used str keys.
+_RESPONSE_TYPES = {200: "object", 201: "object", 202: "object",
+                   "200": "object", "201": "object", "202": "object"}
+
+# kubernetes-client 37 regenerated ApiClient: the one-shot
+# call_api(resource_path, method, query_params=..., _return_http_data_only=True)
+# became param_serialize() -> call_api(method, url, ...) -> response_deserialize().
+# Detect once, by capability rather than by version number.
+_SPLIT_CALL_API = hasattr(k8s.ApiClient, "param_serialize")
+
+
 def _raw_call(api: k8s.ApiClient, settings: Settings, path: str, method: str = "GET",
               *, body: dict | None = None, header_params: dict | None = None,
               query_params: list | None = None):
-    """Raw API call compatible with kubernetes-client >= 25 (response_types_map)."""
-    return api.call_api(
-        path, method, body=body, header_params=header_params,
-        query_params=query_params,
-        # v36 keys this map by int status; older generators used str keys.
-        response_types_map={200: "object", 201: "object", 202: "object",
-                            "200": "object", "201": "object", "202": "object"},
-        auth_settings=["BearerToken"], _return_http_data_only=True,
-        _request_timeout=_timeout(settings),
+    """Raw API call, compatible with kubernetes-client >= 25 and >= 37."""
+    timeout = _timeout(settings)
+    if not _SPLIT_CALL_API:
+        return api.call_api(
+            path, method, body=body, header_params=header_params,
+            query_params=query_params,
+            response_types_map=_RESPONSE_TYPES,
+            auth_settings=["BearerToken"], _return_http_data_only=True,
+            _request_timeout=timeout,
+        )
+    # >= 37: serialize, call, deserialize.
+    headers = dict(header_params or {})
+    headers.setdefault("Accept", "application/json")
+    if body is not None:
+        headers.setdefault("Content-Type", "application/json")
+    args = api.param_serialize(
+        method=method, resource_path=path, path_params={},
+        query_params=list(query_params or []), header_params=headers,
+        body=body, post_params=[], files={}, auth_settings=["BearerToken"],
+        collection_formats={},
     )
+    response = api.call_api(*args, _request_timeout=timeout)
+    response.read()
+    return api.response_deserialize(response, _RESPONSE_TYPES).data
 
 
 # -- discovery ----------------------------------------------------------------

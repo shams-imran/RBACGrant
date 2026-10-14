@@ -463,6 +463,46 @@ those entries are read-only in the UI:
 RBAC_UI_CLUSTERS="prod-eu=vault:secret/rbacgrant/clusters/prod-eu#kubeconfig"
 ```
 
+#### "The API server resolves to loopback"
+
+The SSRF guard in step 1 refuses a kubeconfig whose server address resolves to
+`127.0.0.0/8` or `::1`, because the server is about to make authenticated
+requests to it. Without that check, anyone who can upload a kubeconfig could
+aim RBACGrant at services only RBACGrant can reach — its own port, a sidecar,
+anything bound to its localhost.
+
+Local clusters hit this constantly: k3d, kind, OrbStack and Docker Desktop all
+write `server: https://127.0.0.1:PORT` into your kubeconfig.
+
+| | `RBAC_UI_ALLOW_LOOPBACK_API_SERVERS=false` (default) | `=true` |
+|---|---|---|
+| Loopback API server | refused at upload | accepted |
+| Metadata IP (`169.254.169.254`) | refused | **still refused** |
+| Other link-local | refused | **still refused** |
+
+So the flag widens exactly one thing, and **where RBACGrant runs decides
+whether it helps**:
+
+- **Running on your own machine** (`make run`, or a container with
+  `--network=host`) — `127.0.0.1` really is your local cluster's API server.
+  Set `RBAC_UI_ALLOW_LOOPBACK_API_SERVERS=true` and upload the kubeconfig
+  unchanged.
+- **Running in a pod or a bridged container** — `127.0.0.1` is that container's
+  own network namespace, so the flag cannot make the kubeconfig work; it just
+  turns a clear error into a connection timeout. Leave it `false` and rewrite
+  the address to one the container can reach. For the cluster RBACGrant is
+  deployed in, that's the in-cluster service name:
+
+  ```bash
+  kubectl config view --minify --raw \
+    | sed 's|https://127.0.0.1:PORT|https://kubernetes.default.svc|' \
+    > cluster-inpod.kubeconfig
+  ```
+
+  The API server's serving certificate already covers
+  `kubernetes.default.svc`, so the `certificate-authority-data` in your
+  kubeconfig keeps verifying — no `insecure-skip-tls-verify` needed.
+
 ### Giving someone access, end to end
 
 **Grant Access** is the whole flow on one page. The YAML on the right updates as
@@ -640,6 +680,7 @@ every variable with comments; the ones you'll actually touch:
 | `RBAC_UI_READ_ONLY` | `false` | global kill switch for every cluster write |
 | `RBAC_UI_AUDIT_LOG_FILE` | — | JSON-lines audit log, in addition to stdout |
 | `RBAC_UI_ALLOWED_API_SERVERS` | — | allowlist of API server hosts |
+| `RBAC_UI_ALLOW_LOOPBACK_API_SERVERS` | `false` | accept a kubeconfig whose API server resolves to loopback — see [below](#the-api-server-resolves-to-loopback) |
 
 ---
 

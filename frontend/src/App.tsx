@@ -61,17 +61,19 @@ function Shell() {
 
   const navGroups = [
     [
+      { to: '/objects', label: 'RBAC Objects List' },
+    ],
+    [
       { to: '/roles', label: 'Role Builder' },
       { to: '/bindings', label: 'Binding Builder' },
-      { to: '/kubeconfig', label: 'Kubeconfig' },
-      { to: '/objects', label: 'RBAC Objects' },
+      { to: '/kubeconfig', label: 'KubeConfig' },
     ],
     [
       { to: '/grant', label: 'Grant Access' },
       { to: '/templates', label: 'Templates' },
     ],
     [
-      { to: '/config-tools', label: 'Merge / Split' },
+      { to: '/config-tools', label: 'Merge / Split Configs' },
     ],
     [
       { to: '/can-i', label: 'Can-I Check' },

@@ -134,8 +134,21 @@ data:
   #RBAC_UI_ALLOWED_API_SERVERS: https://k8s-prod.example.com:6443,https://k8s-staging.example.com:6443
   # Accept kubeconfigs with insecure-skip-tls-verify (warning badge if used).
   RBAC_UI_ALLOW_INSECURE_CLUSTER_TLS: "false"
-  # Loopback API servers are a local-dev convenience (k3d, kind, OrbStack) and
-  # unreachable from a pod anyway — keep off here.
+  # Whether an uploaded kubeconfig may name an API server that resolves to
+  # loopback. Part of the SSRF guard (app/store/kubeconfig_validation.py:92).
+  #   false → refused at upload: "the API server resolves to loopback".
+  #   true  → accepted. Metadata and link-local IPs stay blocked regardless.
+  # KEEP THIS false IN A POD. In here 127.0.0.1 is the pod's own network
+  # namespace, not your workstation or the node, so turning it on cannot make
+  # a 127.0.0.1 kubeconfig work — it only replaces a clear validation error
+  # with a connection timeout, and lets an uploaded kubeconfig aim this server
+  # at its own localhost. A kubeconfig from a local cluster (k3d, kind,
+  # OrbStack: `server: https://127.0.0.1:PORT`) needs its address rewritten to
+  # one the pod can reach. For the cluster RBACGrant itself runs in:
+  #   server: https://kubernetes.default.svc
+  # which the API server's serving cert already covers, so the CA data in your
+  # kubeconfig keeps verifying. The flag is for running RBACGrant directly on
+  # your workstation, where 127.0.0.1 genuinely is the API server.
   RBAC_UI_ALLOW_LOOPBACK_API_SERVERS: "false"
   # Exec credential plugins a kubeconfig may invoke (absent = none allowed).
   # Only list plugins that exist in the image; none are installed by default.
@@ -300,8 +313,13 @@ spec:
               value: 0.0.0.0
             - name: RBAC_UI_ALLOW_INSECURE_HTTP
               value: "true" # TLS terminates at the Ingress
+            # A subdirectory of the mount, not the mount itself: with fsGroup
+            # the kubelet mounts /data as root:10001, and the store chmods its
+            # data dir to 0700 at startup, which this user cannot do to a
+            # root-owned directory (EPERM). A subdirectory we create ourselves
+            # is owned by 10001. Same reason as RUNTIME_DIR below.
             - name: RBAC_UI_DATA_DIR
-              value: /data
+              value: /data/store
             # A subdirectory of the mount, not the mount itself. The kubelet
             # creates an fsGroup emptyDir as drwxrwsrwt root:10001, which this
             # user cannot chmod and the server refuses as world-accessible.

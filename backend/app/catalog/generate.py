@@ -153,10 +153,10 @@ def generate_from_cluster() -> None:
     groups: dict[str, dict[str, list[str]]] = {}
 
     def raw(path: str):
-        return api.call_api(
-            path, "GET",
-            response_types_map={200: "object", "200": "object"},
-            auth_settings=["BearerToken"], _return_http_data_only=True)
+        # Shares the client-version shim used by the runtime code paths.
+        from ..k8s.operations import _raw_call
+        from ..settings import get_settings
+        return _raw_call(api, get_settings(), path)
 
     def collect(path: str, group_name: str) -> None:
         data = raw(path)

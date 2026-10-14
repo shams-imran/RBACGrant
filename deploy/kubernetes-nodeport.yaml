@@ -1,0 +1,33 @@
+# Optional add-on: expose RBACGrant on a node port for LOCAL testing
+# (OrbStack, kind, k3d, Docker Desktop).
+#
+#   kubectl apply -f deploy/kubernetes.yaml -f deploy/kubernetes-nodeport.yaml
+#
+# Not for anything other people can reach: a node port is plain HTTP, so the
+# session cookie and any kubeconfig you upload cross the network in the clear.
+# For a shared deployment use an Ingress with TLS in front of the ClusterIP
+# Service in kubernetes.yaml instead.
+#
+# The app checks the browser's Host header and rejects cross-origin POSTs, so
+# the ConfigMap has to agree with the URL you actually open:
+#   RBAC_UI_PUBLIC_URL: http://localhost:30080     (compared WITH the port)
+#   RBAC_UI_ALLOWED_HOSTS: localhost,127.0.0.1     (compared WITHOUT the port)
+# Getting PUBLIC_URL wrong is quiet: the Host check passes, then the login POST
+# is rejected 403 cross-origin, or the session cookie is issued Secure and the
+# browser drops it over plain HTTP.
+apiVersion: v1
+kind: Service
+metadata:
+  name: rbacgrant-nodeport
+  namespace: rbacgrant
+  labels:
+    app.kubernetes.io/name: rbacgrant
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: rbacgrant
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      nodePort: 30080

@@ -120,6 +120,18 @@ This is the part with the most deliberate design, worth tracing:
    `tokenFile`), gates `exec` plugins against an allowlist, resolves the server
    URL and runs an SSRF check against link-local/metadata/loopback addresses,
    then **normalizes it to a single context**.
+
+   The SSRF check resolves the hostname *before* any connect, so a DNS name
+   pointing at `127.0.0.1` is caught too. Metadata and link-local targets are
+   unconditional refusals; loopback is the one case with an escape hatch,
+   `RBAC_UI_ALLOW_LOOPBACK_API_SERVERS`, because a developer running the app on
+   their own machine against k3d/kind/OrbStack has a legitimately loopback API
+   server. The flag is scoped to that: it never relaxes the metadata or
+   link-local rules. Note that it is only meaningful when the app's loopback
+   *is* the cluster's — inside a container or pod, `127.0.0.1` is that
+   namespace's own, and the address has to be rewritten to a reachable one
+   (`kubernetes.default.svc` for the cluster the app is deployed in) instead.
+
 2. Saving encrypts it with AES-256-GCM where **the cluster name is the AEAD
    associated data** — rename a file on disk and decryption fails
    (`store/local_encrypted.py:85`). A 16-byte `key_id` in the header gives a
