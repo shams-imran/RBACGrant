@@ -152,8 +152,10 @@ def test_connection(cluster: str, request: Request,
     except Exception as exc:  # noqa: BLE001 — connection failures are expected here
         reason = (str(exc) if isinstance(exc, ops.K8sOperationError)
                   else "connection failed")
-        log.warning("cannot connect to cluster %r for user %r: %s",
-                    cluster, session.username, reason)
+        # Log the real exception class: a masked TypeError here once made a
+        # client-library incompatibility look like a network problem.
+        log.warning("cannot connect to cluster %r for user %r: %s (%s)",
+                    cluster, session.username, reason, exc.__class__.__name__)
         get_audit().emit("cluster.connect", cluster=cluster, result="error",
                          error=reason, **_audit_ctx(request, session))
         return {"ok": False, "error": reason}

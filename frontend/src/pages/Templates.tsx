@@ -16,7 +16,10 @@ interface TemplateFull extends TemplateInfo { variables: string[]; bundle: Bundl
 function substitute(bundle: Bundle, vars: Record<string, string>): Bundle {
   let text = JSON.stringify(bundle);
   for (const [k, v] of Object.entries(vars)) {
-    if (v) text = text.split(`\${${k}}`).join(v);
+    // JSON-escape the value (quotes, backslashes) so the spliced string stays
+    // valid JSON; invalid names are then rejected cleanly by the backend
+    // instead of crashing the page in JSON.parse.
+    if (v) text = text.split(`\${${k}}`).join(JSON.stringify(v).slice(1, -1));
   }
   return JSON.parse(text) as Bundle;
 }

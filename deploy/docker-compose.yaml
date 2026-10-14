@@ -32,7 +32,7 @@ services:
       # Directory mount: the encrypted cluster store survives on the host.
       - ${RBACGRANT_DATA_DIR:-./data}:/data
       # The AES key, read-only, mounted where STORE_KEY_REF above expects it.
-      - ${RBACGRANT_DATA_DIR:-~/.config/rbac-ui/store.key}:/etc/rbac-ui/store.key:ro
+      - ${RBACGRANT_STORE_KEY:-~/.config/rbac-ui/store.key}:/etc/rbac-ui/store.key:ro
 
     # Immutable container: only /data and the runtime tmpfs are writable.
     read_only: true
