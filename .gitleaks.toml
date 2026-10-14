@@ -20,3 +20,11 @@ paths = [
   '''README\.md''',
   '''docs/RELEASING\.md''',
 ]
+# Scoped to the one value, NOT to deploy/kubernetes.yaml as a path: a real key
+# pasted over the default is still reported.
+regexes = [
+  # The insecure default store key shipped in deploy/kubernetes.yaml. It
+  # decodes to the ASCII string "rbacgrant-insecure-default-key!!", which is
+  # documentation, not a credential.
+  '''cmJhY2dyYW50LWluc2VjdXJlLWRlZmF1bHQta2V5ISE=''',
+]

@@ -1,19 +1,36 @@
 # RBACGrant on Kubernetes — hardened single-replica deployment.
 #
+# Configuration is split by sensitivity:
+#   * ConfigMap rbacgrant-config  — every non-secret setting, defined below so
+#     the deployed policy (TTL caps, lockouts, guardrails) is reviewable in git.
+#   * Secret rbacgrant-secrets    — the admin password hash. Defined below with
+#     the DEFAULT password from .env.example; change it, see step 2.
+#   * Secret rbacgrant-store-key  — the AES key for the local cluster store.
+#     Defined below with an INSECURE DEFAULT key; replace it, see step 3.
+#
 # Before applying:
-#   1. Build/push the image somewhere the cluster can pull it, then change
-#      spec.template.spec.containers[0].image below.
-#   2. Create the config secret from your .env (edit PUBLIC_URL etc. first):
-#        kubectl -n rbacgrant create secret generic rbacgrant-env \
-#          --from-env-file=.env
-#   3. Create the store-key secret (the AES key for the local cluster store):
-#        kubectl -n rbacgrant create secret generic rbacgrant-store-key \
-#          --from-file=store.key=/path/to/store.key
+#   1. Edit the two EDIT ME values in the ConfigMap (PUBLIC_URL,
+#      ALLOWED_HOSTS). The image is pulled from Docker Hub
+#      (shamsimran/rbacgrant:latest), so nothing to build — swap
+#      spec.template.spec.containers[0].image for your own registry if the
+#      cluster cannot reach Docker Hub.
+#   2. Change the default admin password in Secret rbacgrant-secrets below.
+#      It ships with the public default from .env.example (admin /
+#      changeme@123456!!), which is fine for a local try-out and nothing else.
+#      Generate your own with `rbac-ui hash-password`.
+#   3. Change the default store key in Secret rbacgrant-store-key below. It
+#      ships with a public default, so every kubeconfig you save would be
+#      decryptable by anyone with this repo. Rotation steps are in the comment
+#      on that Secret — note that re-keying AFTER clusters are stored needs
+#      `rbac-ui store rotate-key`, not just a new value.
 #   4. kubectl apply -f deploy/kubernetes.yaml
+#
+# Changing the ConfigMap does NOT restart the pod — follow an edit with
+#   kubectl -n rbacgrant rollout restart deploy/rbacgrant
 #
 # TLS: this manifest serves plain HTTP inside the cluster and expects TLS to
 # terminate at your Ingress / LoadBalancer (hence ALLOW_INSECURE_HTTP=true
-# below). Set RBAC_UI_PUBLIC_URL in the env secret to the https:// URL users
+# below). Set RBAC_UI_PUBLIC_URL in the ConfigMap to the https:// URL users
 # will open, and RBAC_UI_ALLOWED_HOSTS to its hostname.
 apiVersion: v1
 kind: Namespace
@@ -28,6 +45,188 @@ metadata:
 # The app talks to managed clusters with the kubeconfigs you upload, not with
 # this in-cluster identity — so no token is mounted and no RBAC is bound.
 automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rbacgrant-config
+  namespace: rbacgrant
+  labels:
+    app.kubernetes.io/name: rbacgrant
+# Non-secret settings only. Anything secret-bearing belongs in a Secret, or in
+# Vault behind a *_REF. Values are the shipped defaults from .env.example,
+# adjusted for running in a pod. Keys set in the container spec's env: block
+# (bind address, paths) are deliberately absent here — one source per key.
+data:
+  ## ── server & web ────────────────────────────────────────────────────────
+  RBAC_UI_PORT: "8080"
+  # EDIT ME — the https:// URL users open; cookies and redirects derive from it.
+  RBAC_UI_PUBLIC_URL: https://rbacgrant.example.com
+  # EDIT ME — allowed Host headers (blocks DNS rebinding). Keep localhost: the
+  # kubelet probes by pod IP and sends Host: localhost (see probes below).
+  RBAC_UI_ALLOWED_HOSTS: rbacgrant.example.com,localhost
+  # Reverse-proxy IPs allowed to set X-Forwarded-* (for audit-log client IPs).
+  # Set this to your ingress controller's pod CIDR to get real client IPs.
+  #RBAC_UI_TRUSTED_PROXIES: 10.42.0.0/16
+  # true = whole app is view-only: no apply, delete or kubeconfig issuing.
+  RBAC_UI_READ_ONLY: "false"
+  RBAC_UI_LOG_LEVEL: info
+  # Append-only JSON-lines audit log: logins, applies, deletes, kubeconfigs.
+  # On the PVC so it survives restarts; created 0600 on first write.
+  RBAC_UI_AUDIT_LOG_FILE: /data/audit.log
+  RBAC_UI_AUDIT_LOG_MAX_SIZE: 64MiB
+  RBAC_UI_BRAND_NAME: RBACGrant
+
+  ## ── authentication & sessions ───────────────────────────────────────────
+  RBAC_UI_AUTH_MODE: local
+  RBAC_UI_ADMIN_USERNAME: admin
+  # The password itself is in Secret rbacgrant-secrets. To read it from Vault
+  # instead, drop that secret and set a ref here (resolved on every rotation
+  # check, so changing it in Vault revokes live sessions):
+  #RBAC_UI_ADMIN_PASSWORD_REF: vault:secret/k8s-rbac-builder/auth#admin_password_hash
+  # Extra users with per-user role + cluster scope (a ref to a JSON file).
+  #RBAC_UI_USERS_REF: vault:secret/k8s-rbac-builder/auth#users
+  RBAC_UI_SESSION_IDLE_TIMEOUT: 15m
+  RBAC_UI_SESSION_MAX_AGE: 8h
+  RBAC_UI_STEP_UP_WINDOW: 5m
+  RBAC_UI_LOGIN_MAX_ATTEMPTS: "5"
+  RBAC_UI_LOGIN_LOCKOUT: 15m
+  RBAC_UI_MIN_PASSWORD_LENGTH: "6"
+
+  ## ── cluster store (where uploaded kubeconfigs live) ─────────────────────
+  # local = the encrypted file store on the PVC, keyed by rbacgrant-store-key.
+  # Switch to vault to keep kubeconfigs in Vault instead (configure below),
+  # or none to run offline with no saved clusters.
+  RBAC_UI_CLUSTER_STORE: local
+  # Pre-registered clusters from config (name=secret-ref), read-only in the UI.
+  #RBAC_UI_CLUSTERS: prod-dhaka=vault:secret/k8s/prod-dhaka#kubeconfig
+  RBAC_UI_CLUSTER_CRED_CACHE_TTL: 5m
+  RBAC_UI_SECRET_CACHE_TTL: 60s
+  # Saved builder profiles. Must be on the PVC: the root filesystem is
+  # read-only, and this directory is created on first use.
+  RBAC_UI_PROFILES_DIR: /data/profiles
+
+  ## ── Vault connection (only if vault: refs are used) ─────────────────────
+  #VAULT_ADDR: https://vault.internal:8200
+  #VAULT_NAMESPACE: admin
+  #VAULT_CACERT: /etc/ssl/certs/vault-ca.pem
+  # token | approle | kubernetes — prefer kubernetes in-cluster: the pod
+  # authenticates with its ServiceAccount token and no secret is stored.
+  # That needs automountServiceAccountToken: true on the pod spec below.
+  RBAC_UI_VAULT_AUTH_METHOD: token
+  #RBAC_UI_VAULT_K8S_ROLE: rbacgrant
+  #RBAC_UI_VAULT_ROLE_ID: 12345678-aaaa-bbbb-cccc-1234567890ab
+  RBAC_UI_VAULT_KV_MOUNT: secret
+  RBAC_UI_VAULT_PATH_PREFIX: k8s-rbac-builder
+
+  ## ── issued credentials (Kubeconfig & Grant Access pages) ────────────────
+  # Picker default + hard cap for ServiceAccount tokens and client certs.
+  RBAC_UI_DEFAULT_TOKEN_TTL: 8h
+  RBAC_UI_MAX_TOKEN_TTL: 7d
+  RBAC_UI_DEFAULT_CERT_TTL: 24h
+  RBAC_UI_MAX_CERT_TTL: 7d
+  # Legacy never-expiring Secret-based SA tokens — keep off.
+  RBAC_UI_ALLOW_LEGACY_SA_TOKENS: "false"
+
+  ## ── cluster connection safety ───────────────────────────────────────────
+  # Optional allowlist of API server URLs that may be registered. Setting this
+  # is the single most effective guardrail on a shared deployment.
+  #RBAC_UI_ALLOWED_API_SERVERS: https://k8s-prod.example.com:6443,https://k8s-staging.example.com:6443
+  # Accept kubeconfigs with insecure-skip-tls-verify (warning badge if used).
+  RBAC_UI_ALLOW_INSECURE_CLUSTER_TLS: "false"
+  # Loopback API servers are a local-dev convenience (k3d, kind, OrbStack) and
+  # unreachable from a pod anyway — keep off here.
+  RBAC_UI_ALLOW_LOOPBACK_API_SERVERS: "false"
+  # Exec credential plugins a kubeconfig may invoke (absent = none allowed).
+  # Only list plugins that exist in the image; none are installed by default.
+  #RBAC_UI_ALLOWED_EXEC_PLUGINS: aws,gke-gcloud-auth-plugin,kubelogin
+  RBAC_UI_K8S_TIMEOUT: 15s
+
+  ## ── guardrails & misc ───────────────────────────────────────────────────
+  # Custom guardrail policy (hard blocks / override-with-reason) used on apply.
+  # Mount it from its own ConfigMap if you use one.
+  #RBAC_UI_POLICY_FILE: /etc/rbac-ui/policy.yaml
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: rbacgrant-secrets
+  namespace: rbacgrant
+  labels:
+    app.kubernetes.io/name: rbacgrant
+# ⚠ SHIPPED DEFAULT CREDENTIAL — the hash below is the one documented in
+# .env.example, so it is public. Anyone with this repo can log in until you
+# change it. Change it before the deployment is reachable by anyone else:
+#
+#   kubectl -n rbacgrant create secret generic rbacgrant-secrets \
+#     --from-literal=RBAC_UI_ADMIN_PASSWORD_HASH='<rbac-ui hash-password>' \
+#     --dry-run=client -o yaml | kubectl apply -f -
+#   kubectl -n rbacgrant rollout restart deploy/rbacgrant
+#
+# …and note that a later `kubectl apply -f deploy/kubernetes.yaml` resets it to
+# this default again. To stop that, delete this Secret from the file and set
+# RBAC_UI_ADMIN_PASSWORD_REF in the ConfigMap to a vault: ref instead.
+type: Opaque
+stringData:
+  # Argon2id hash of the default password: changeme@123456!!
+  # Replace with your own from `rbac-ui hash-password`.
+  RBAC_UI_ADMIN_PASSWORD_HASH: '$argon2id$v=19$m=65536,t=3,p=4$4XY3vzbrCYScUEEbVdP6ng$oDRRiJwVbLzSibnKTjBNrwVtssw0KQG1gLu9ffbeJW4'
+  # Discouraged: plaintext (hashed in memory at startup, warning logged).
+  #RBAC_UI_ADMIN_PASSWORD: 'changeme@123456!!'
+  # Only for VAULT_AUTH_METHOD=token; prefer kubernetes auth in-cluster.
+  #VAULT_TOKEN: REPLACE_ME
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: rbacgrant-store-key
+  namespace: rbacgrant
+  labels:
+    app.kubernetes.io/name: rbacgrant
+# ⚠ SHIPPED DEFAULT ENCRYPTION KEY — this is the AES-GCM key that encrypts
+# every kubeconfig saved in the cluster store, and it is public, because it is
+# committed here. Until you replace it, anyone who can read this repo and get
+# a copy of the PVC can decrypt every stored cluster credential — which are
+# usually cluster-admin credentials. Replace it before storing anything real.
+#
+# The value deliberately decodes to the ASCII string
+# "rbacgrant-insecure-default-key!!", so `kubectl get secret -o yaml` makes it
+# obvious at a glance that the default is still in place.
+#
+# HOW TO CHANGE IT ─────────────────────────────────────────────────────────
+#
+# Generate a key, and keep a backup: a lost key means re-uploading every
+# cluster, there is no recovery.
+#   head -c 32 /dev/urandom | base64
+#
+# a) Fresh install, nothing stored yet — just swap the value:
+#      kubectl -n rbacgrant create secret generic rbacgrant-store-key \
+#        --from-literal=store.key='<new key>' \
+#        --dry-run=client -o yaml | kubectl apply -f -
+#      kubectl -n rbacgrant rollout restart deploy/rbacgrant
+#
+# b) Clusters already saved — they must be re-encrypted FIRST or they become
+#    permanently undecryptable. Rotate inside the running pod, which reads the
+#    old key from this Secret and rewrites every entry under the new one:
+#      kubectl -n rbacgrant exec -it deploy/rbacgrant -- rbac-ui store rotate-key
+#        (prompts: New 32-byte base64 key)
+#      kubectl -n rbacgrant create secret generic rbacgrant-store-key \
+#        --from-literal=store.key='<the same new key>' \
+#        --dry-run=client -o yaml | kubectl apply -f -
+#      kubectl -n rbacgrant rollout restart deploy/rbacgrant
+#      kubectl -n rbacgrant exec -it deploy/rbacgrant -- rbac-ui store verify
+#    Between the rotate and the restart the running server still holds the old
+#    key in memory and cannot read the store — keep the gap short.
+#
+# Editing the value below works too, but a later `kubectl apply -f` resets it
+# to this default again. To keep the key out of git entirely, delete this
+# Secret and point RBAC_UI_STORE_KEY_REF (container env, below) at Vault:
+#   vault kv put secret/k8s-rbac-builder/store key=@store.key
+#   RBAC_UI_STORE_KEY_REF: vault:secret/k8s-rbac-builder/store#key
+type: Opaque
+stringData:
+  # 32 bytes of base64 — decodes to "rbacgrant-insecure-default-key!!".
+  store.key: cmJhY2dyYW50LWluc2VjdXJlLWRlZmF1bHQta2V5ISE=
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -70,19 +269,33 @@ spec:
           type: RuntimeDefault
       containers:
         - name: rbacgrant
-          # Pinned by digest: tags move, digests do not. Verify it with
-          # cosign before rolling it out (see docs/RELEASING.md).
-          image: shamsimran/rbacgrant@sha256:ffe990c3d7f02a3d6259b2a4149af2fb60808398bc32e14076b0b9cfe9cd7fa9
-          imagePullPolicy: IfNotPresent
+          # Official image on Docker Hub (multi-arch: linux/amd64 + arm64):
+          #   docker pull shamsimran/rbacgrant:latest
+          image: shamsimran/rbacgrant:latest
+          # Required with a moving tag: IfNotPresent would keep running the
+          # copy already on the node and never see a new push. Note that each
+          # restart can therefore land on a different build.
+          imagePullPolicy: Always
+          # For a reproducible rollout, pin the digest instead of the tag —
+          # tags move, digests do not — and verify it with cosign first
+          # (see docs/RELEASING.md). As of 2026-10-14 :latest is:
+          #   image: shamsimran/rbacgrant@sha256:ffe990c3d7f02a3d6259b2a4149af2fb60808398bc32e14076b0b9cfe9cd7fa9
+          # Look up the current one with:
+          #   docker buildx imagetools inspect shamsimran/rbacgrant:latest
           ports:
             - name: http
               containerPort: 8080
+          # Order matters: later sources win, and the explicit env: block below
+          # beats both. The secret is required — a missing one fails the pod
+          # with a clear reason instead of a crash loop on "no admin password".
           envFrom:
+            - configMapRef:
+                name: rbacgrant-config
             - secretRef:
-                name: rbacgrant-env
+                name: rbacgrant-secrets
           env:
-            # Explicit env wins over envFrom — these pin the values that must
-            # differ inside a pod, whatever the .env secret says.
+            # Pod invariants: these must hold whatever the ConfigMap says, so
+            # they live here and nowhere else.
             - name: RBAC_UI_BIND_ADDR
               value: 0.0.0.0
             - name: RBAC_UI_ALLOW_INSECURE_HTTP
@@ -168,4 +381,3 @@ spec:
     - name: http
       port: 80
       targetPort: http
-
