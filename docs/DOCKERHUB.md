@@ -1,29 +1,30 @@
-<!-- Docker Hub repository overview for shamsimran/rbacgrant.
-     Paste into Hub → Repository → edit Overview. Keep in sync on release. -->
-
 # RBACGrant
 
-A web GUI that builds **Kubernetes RBAC manifests and kubeconfigs** — with a
-risk linter, apply guardrails and multi-cluster support. Point it at a cluster
-and grant access end to end: pick a starter template or build a Role visually,
-lint it against the Kubernetes RBAC good-practices rules, dry-run it
-server-side, apply it, and hand over a time-boxed kubeconfig (ServiceAccount
-token or signed client certificate) in one flow.
+[![Source](https://img.shields.io/badge/source-GitHub-181717?logo=github)](https://github.com/shams-imran/RBACGrant)
+[![Release](https://img.shields.io/github/v/release/shams-imran/RBACGrant?color=2496ED)](https://github.com/shams-imran/RBACGrant/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/shams-imran/RBACGrant/ci.yml?branch=main&label=CI)](https://github.com/shams-imran/RBACGrant/actions)
+[![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/shams-imran/RBACGrant/blob/main/LICENSE)
+
+**A web GUI for Kubernetes RBAC** — build Roles and RoleBindings visually or
+from 17 starter templates, lint them against the RBAC good-practices rules,
+dry-run and apply to your clusters, and hand over time-boxed kubeconfigs.
+Stop hand-writing RBAC YAML and hoping it's safe.
+
+| | |
+|---|---|
+| **Source & docs** | [github.com/shams-imran/RBACGrant](https://github.com/shams-imran/RBACGrant) |
+| **Issues** | [GitHub issues](https://github.com/shams-imran/RBACGrant/issues) |
+| **Platforms** | `linux/amd64` · `linux/arm64` (one manifest list) |
+| **Runs as** | non-root UID 10001 · read-only rootfs ready · no package managers |
+| **License** | MIT |
 
 ![Grant Access flow](https://raw.githubusercontent.com/shams-imran/RBACGrant/main/docs/screenshots/02-grant-access.png)
 
-- **17 starter templates** for the grants teams otherwise hand-roll: namespace
-  admin/viewer, developer, log reader, pod debugger, incident responder,
-  CI deployer, secret manager, network admin, capacity manager, and more.
-- **Risk linter + guardrails**: wildcard rules, secrets access, exec,
-  escalate/bind, `cluster-admin` bindings and dangerous subjects are flagged;
-  the worst require an admin override with a typed reason — or are refused.
-- **Credential issuing**: TokenRequest tokens and CSR-signed client certs with
-  TTL caps; private keys are generated in the browser and never reach the server.
-- **Can-I checks, live RBAC browsing/editing, YAML import, Helm/Kustomize export,
-  append-only audit log.**
+---
 
-## Try it (nothing stored, no cluster needed)
+## Quick start
+
+Try it with nothing stored and no cluster attached:
 
 ```bash
 docker run --rm -p 127.0.0.1:8080:8080 \
@@ -32,56 +33,41 @@ docker run --rm -p 127.0.0.1:8080:8080 \
   shamsimran/rbacgrant:latest
 ```
 
-Open http://127.0.0.1:8080 and log in as `admin`. There is **no default
-password** — the server refuses to start without one.
+Open http://127.0.0.1:8080 and log in as `admin` with the password you set.
+There is **no default password** — the server refuses to start without one.
 
-> Publish on **loopback only** (`-p 127.0.0.1:8080:8080`). This app holds
+> ⚠️ Publish on **loopback only** (`-p 127.0.0.1:8080:8080`). This app holds
 > cluster admin credentials; a bare `-p 8080:8080` exposes it on every
-> interface. For a real deployment, terminate TLS in front and set
+> interface. For real use, terminate TLS in front and set
 > `RBAC_UI_PUBLIC_URL` to the HTTPS address.
 
-## Supported tags
+## What's inside
 
-| Tag | Meaning |
+- 🧩 **17 starter templates** — namespace admin/viewer, developer, log reader,
+  pod debugger, incident responder, CI deployer, secret manager, network
+  admin, capacity manager, and more: fill in `${team}` and `${namespace}`, done.
+- 🚦 **Risk linter + guardrails** — wildcards, secrets access, exec,
+  `escalate`/`bind`, `cluster-admin` bindings and dangerous subjects are
+  flagged; the worst need an admin override with a typed reason, or are refused outright.
+- 🔑 **Credential issuing** — ServiceAccount tokens (TokenRequest) and
+  CSR-signed client certificates with TTL caps; private keys are generated in
+  the browser and never reach the server.
+- 🔍 **Can-I checks**, live RBAC browse/edit/delete, YAML import,
+  Helm/Kustomize/zip export, append-only audit log, multi-cluster with an
+  encrypted credential store.
+
+## Tags
+
+| Tag | Use it for |
 |---|---|
-| `1.1.0`, `1.1`, `1` | immutable release lines |
-| `latest` | most recent release |
+| `1.1.0` | pinning an exact release |
+| `1.1`, `1` | tracking a release line |
+| `latest` | trying it out |
 
-Multi-arch (`linux/amd64`, `linux/arm64`); `docker pull` picks the right one.
-For production, pin the digest from the
-[GitHub release notes](https://github.com/shams-imran/RBACGrant/releases) —
-tags move, digests do not.
-
-## Persistent deployment
-
-Hardened Compose and Kubernetes manifests ship in
-[`deploy/`](https://github.com/shams-imran/RBACGrant/tree/main/deploy):
-read-only rootfs, non-root UID 10001, all capabilities dropped, tmpfs scratch,
-encrypted cluster store on a volume. The
-[README](https://github.com/shams-imran/RBACGrant#running-it-properly) walks
-through the password hash, the store key and Vault integration.
-
-## Key configuration (env vars, `RBAC_UI_` prefix)
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `RBAC_UI_ADMIN_PASSWORD_HASH` | — | Argon2id hash (`rbac-ui hash-password`); required |
-| `RBAC_UI_PUBLIC_URL` | `http://127.0.0.1:8080` | URL users open; drives Origin checks + cookie flags |
-| `RBAC_UI_CLUSTER_STORE` | `none` | `none`, `local` (AES-GCM encrypted) or `vault` |
-| `RBAC_UI_STORE_KEY_REF` | — | 32-byte base64 key ref for the local store |
-| `RBAC_UI_MAX_TOKEN_TTL` / `RBAC_UI_MAX_CERT_TTL` | `7d` | hard caps on issued credentials |
-| `RBAC_UI_ALLOWED_API_SERVERS` | — | allowlist of registrable API servers |
-| `RBAC_UI_READ_ONLY` | `false` | global kill switch for cluster writes |
-| `RBAC_UI_AUDIT_LOG_FILE` | — | JSON-lines audit log path |
-
-Full reference with comments:
-[`.env.example`](https://github.com/shams-imran/RBACGrant/blob/main/.env.example).
-
-## Image security
-
-Non-root (UID 10001), no package managers in the final layer, read-only-rootfs
-ready, Trivy-gated at release, SLSA provenance and SBOM attached. Every release
-is signed keylessly with cosign:
+For production, pin the **digest** from the
+[release notes](https://github.com/shams-imran/RBACGrant/releases) — tags
+move, digests don't. Every release is Trivy-gated, ships an SBOM and SLSA
+provenance, and is signed with cosign:
 
 ```bash
 cosign verify \
@@ -90,9 +76,29 @@ cosign verify \
   shamsimran/rbacgrant:1.1.0
 ```
 
-## Links
+## Running it for real
 
-- **Source:** https://github.com/shams-imran/RBACGrant
-- **Issues:** https://github.com/shams-imran/RBACGrant/issues
-- **Security policy:** [SECURITY.md](https://github.com/shams-imran/RBACGrant/blob/main/SECURITY.md)
-- **License:** MIT
+Hardened [Compose and Kubernetes manifests](https://github.com/shams-imran/RBACGrant/tree/main/deploy)
+ship in the repo — read-only rootfs, all capabilities dropped, tmpfs scratch,
+encrypted cluster store on a volume. The
+[README](https://github.com/shams-imran/RBACGrant#running-it-properly) covers
+the password hash, the store key and Vault.
+
+Most-touched settings (full list in
+[`.env.example`](https://github.com/shams-imran/RBACGrant/blob/main/.env.example)):
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `RBAC_UI_ADMIN_PASSWORD_HASH` | — | Argon2id hash (`rbac-ui hash-password`); **required** |
+| `RBAC_UI_PUBLIC_URL` | `http://127.0.0.1:8080` | URL users open; drives Origin checks + cookie flags |
+| `RBAC_UI_CLUSTER_STORE` | `none` | `none` · `local` (AES-GCM) · `vault` |
+| `RBAC_UI_STORE_KEY_REF` | — | key ref for the local store |
+| `RBAC_UI_MAX_TOKEN_TTL` / `MAX_CERT_TTL` | `7d` | hard caps on issued credentials |
+| `RBAC_UI_ALLOWED_API_SERVERS` | — | allowlist of registrable API servers |
+| `RBAC_UI_READ_ONLY` | `false` | global kill switch for cluster writes |
+
+---
+
+Found a security issue? See
+[SECURITY.md](https://github.com/shams-imran/RBACGrant/blob/main/SECURITY.md).
+Everything else → [github.com/shams-imran/RBACGrant](https://github.com/shams-imran/RBACGrant).
