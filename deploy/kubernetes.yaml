@@ -282,15 +282,15 @@ spec:
           type: RuntimeDefault
       containers:
         - name: rbacgrant
-          # v1.1.0, pinned by digest: the tag before the @ is documentation,
-          # the digest is what the kubelet enforces — tags move, digests do
-          # not. Verify it with cosign before rolling out (see
-          # docs/RELEASING.md); the digest for each release is in its GitHub
-          # release notes, or:
-          #   docker buildx imagetools inspect shamsimran/rbacgrant:1.1.0
-          image: shamsimran/rbacgrant:1.1.0@sha256:29629bf53565b126c635cb9840df5c14d5f6ae3cbfa30cbf2a7183b84a6ca830
-          # A digest is immutable, so there is nothing newer to pull.
-          imagePullPolicy: IfNotPresent
+          # Tracks the newest release. For a reproducible production rollout,
+          # pin the digest instead — tags move, digests do not — and verify
+          # it with cosign first (see docs/RELEASING.md). Each release's
+          # digest is in its GitHub release notes, or:
+          #   docker buildx imagetools inspect shamsimran/rbacgrant:latest
+          image: shamsimran/rbacgrant:latest
+          # Required with a moving tag: IfNotPresent would keep the copy
+          # already on the node and never see a new release.
+          imagePullPolicy: Always
           ports:
             - name: http
               containerPort: 8080

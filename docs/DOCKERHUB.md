@@ -73,7 +73,7 @@ provenance, and is signed with cosign:
 cosign verify \
   --certificate-identity-regexp '^https://github.com/shams-imran/RBACGrant/\.github/workflows/release\.yml@refs/tags/v' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  shamsimran/rbacgrant:1.1.0
+  shamsimran/rbacgrant:latest
 ```
 
 ## Running it for real (persistent, with storage)
@@ -88,7 +88,7 @@ head -c 32 /dev/urandom | base64 > ~/.config/rbacgrant/store.key
 chmod 600 ~/.config/rbacgrant/store.key
 
 # hash the admin password (prompts twice, prints the hash)
-docker run --rm -it --entrypoint python shamsimran/rbacgrant:1.1.0 -m app.cli hash-password
+docker run --rm -it --entrypoint python shamsimran/rbacgrant:latest -m app.cli hash-password
 ```
 
 ### docker run
@@ -104,7 +104,7 @@ docker run -d --name rbacgrant \
   -v rbacgrant-data:/data \
   -v ~/.config/rbacgrant/store.key:/etc/rbac-ui/store.key:ro \
   --restart unless-stopped \
-  shamsimran/rbacgrant:1.1.0
+  shamsimran/rbacgrant:latest
 ```
 
 `rbacgrant-data` keeps the encrypted cluster store and the audit log across
@@ -121,7 +121,7 @@ single quotes around the hash — it contains `$`.
 ```yaml
 services:
   rbacgrant:
-    image: shamsimran/rbacgrant:1.1.0
+    image: shamsimran/rbacgrant:latest
     restart: unless-stopped
     ports:
       - "127.0.0.1:8080:8080"     # loopback only — TLS proxy in front for real use
