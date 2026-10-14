@@ -1,0 +1,13 @@
+# Trivy ignore rules. Keep each entry justified.
+
+# KSV-0109 "ConfigMap stores secrets" on deploy/kubernetes.yaml is a false
+# positive: it matches key NAMES against *TOKEN*/*SECRET*/*PASSWORD*
+# heuristics, and the flagged keys (RBAC_UI_MAX_TOKEN_TTL,
+# RBAC_UI_SECRET_CACHE_TTL, RBAC_UI_MIN_PASSWORD_LENGTH,
+# RBAC_UI_ALLOW_LEGACY_SA_TOKENS, RBAC_UI_DEFAULT_TOKEN_TTL) hold TTL
+# durations, a boolean and a length — no credential. Real credentials live in
+# Secret objects. An inline ignore is impossible: the finding carries no
+# cause location for a comment to attach to. Note this silences the check
+# repo-wide; actual secret VALUES are still caught by the gitleaks
+# pre-commit hook and CI job.
+AVD-KSV-0109
