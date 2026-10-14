@@ -70,7 +70,9 @@ spec:
           type: RuntimeDefault
       containers:
         - name: rbacgrant
-          image: shamsimran/rbacgrant:latest # pin by digest in production
+          # Pinned by digest: tags move, digests do not. Verify it with
+          # cosign before rolling it out (see docs/RELEASING.md).
+          image: shamsimran/rbacgrant@sha256:416698db9b79c55af91629b6c3863338213bf31523e10d92c140e5df9d66668e
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -87,8 +89,12 @@ spec:
               value: "true" # TLS terminates at the Ingress
             - name: RBAC_UI_DATA_DIR
               value: /data
+            # A subdirectory of the mount, not the mount itself. The kubelet
+            # creates an fsGroup emptyDir as drwxrwsrwt root:10001, which this
+            # user cannot chmod and the server refuses as world-accessible.
+            # Creating our own directory inside it gives a 0700 dir we own.
             - name: RBAC_UI_RUNTIME_DIR
-              value: /run/rbac-ui
+              value: /run/rbac-ui/work
             - name: RBAC_UI_STORE_KEY_REF
               value: file:/etc/rbac-ui/store.key
           volumeMounts:
@@ -104,16 +110,25 @@ spec:
             readOnlyRootFilesystem: true
             capabilities:
               drop: [ALL]
+          # The kubelet probes by pod IP, which is not in RBAC_UI_ALLOWED_HOSTS
+          # and is rejected as a DNS-rebinding attempt (400). Send an allowed
+          # Host header instead of widening the allowlist.
           readinessProbe:
             httpGet:
               path: /healthz
               port: http
+              httpHeaders:
+                - name: Host
+                  value: localhost
             initialDelaySeconds: 3
             periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /healthz
               port: http
+              httpHeaders:
+                - name: Host
+                  value: localhost
             initialDelaySeconds: 10
             periodSeconds: 30
           resources:
@@ -133,6 +148,10 @@ spec:
         - name: store-key
           secret:
             secretName: rbacgrant-store-key
+            # Ask for owner-read-only. The kubelet still adds group read
+            # because the pod sets fsGroup (which the data volume needs), so
+            # the file lands as 0440 root:10001 — readable only by this pod's
+            # own user, which the server accepts.
             defaultMode: 0400
 ---
 apiVersion: v1

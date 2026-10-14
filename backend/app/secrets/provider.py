@@ -26,13 +26,38 @@ class SecretRefError(RuntimeError):
     """A ref failed to resolve. The message must never contain a secret value."""
 
 
+def _own_groups() -> set[int]:
+    """Every group this process belongs to, primary first."""
+    groups = {os.getgid()}
+    try:
+        groups.update(os.getgroups())
+    except OSError:  # pragma: no cover - not expected on Linux or macOS
+        pass
+    return groups
+
+
 def _check_file_perms(path: Path, ref: str) -> None:
+    """Refuse a secret file that someone other than this process can read.
+
+    Owner-only (0600) is the ideal, but a platform may hand us the file with
+    group read and no way to change it: Kubernetes mounts secret volumes
+    group-readable whenever the pod sets fsGroup, which it must do for its data
+    volume to be writable. A file whose group is one of our own is still
+    readable by this process alone, so it is accepted; any other group, and any
+    world access at all, is not.
+    """
     st = path.stat()
     mode = stat.S_IMODE(st.st_mode)
-    if mode & 0o077:
+    if mode & 0o007:
         raise SecretRefError(
-            f"secret file for ref {ref!r} is group- or world-readable "
+            f"secret file for ref {ref!r} is world-readable "
             f"(mode {oct(mode)}); chmod it to 0600"
+        )
+    if mode & 0o070 and st.st_gid not in _own_groups():
+        raise SecretRefError(
+            f"secret file for ref {ref!r} is readable by group {st.st_gid}, "
+            f"which this process is not a member of (mode {oct(mode)}); "
+            "chmod it to 0600 or give it a group this process belongs to"
         )
 
 
