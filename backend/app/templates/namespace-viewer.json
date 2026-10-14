@@ -1,0 +1,35 @@
+{
+  "title": "Namespace viewer (read-only)",
+  "description": "Binds the built-in view ClusterRole inside one namespace: read everything except secrets.",
+  "variables": [
+    "team",
+    "namespace"
+  ],
+  "bundle": {
+    "roles": [],
+    "bindings": [
+      {
+        "kind": "RoleBinding",
+        "name": "${team}-viewers",
+        "namespaces": [
+          "${namespace}"
+        ],
+        "annotations": {
+          "rbac-builder/owner": "${team}",
+          "rbac-builder/description": "read-only access to ${namespace} for ${team}"
+        },
+        "roleRef": {
+          "kind": "ClusterRole",
+          "name": "view"
+        },
+        "subjects": [
+          {
+            "kind": "Group",
+            "name": "${team}-viewers"
+          }
+        ]
+      }
+    ],
+    "serviceAccounts": []
+  }
+}

@@ -1,0 +1,82 @@
+{
+  "title": "Batch job operator",
+  "description": "Run and manage Jobs and CronJobs in one namespace, with read access to the pods and logs they produce.",
+  "variables": [
+    "team",
+    "namespace"
+  ],
+  "bundle": {
+    "roles": [
+      {
+        "kind": "Role",
+        "metadata": {
+          "name": "${team}-batch-operator",
+          "namespace": "${namespace}",
+          "annotations": {
+            "rbac-builder/owner": "${team}",
+            "rbac-builder/description": "batch job management in ${namespace} for ${team}"
+          }
+        },
+        "rules": [
+          {
+            "apiGroups": [
+              "batch"
+            ],
+            "resources": [
+              "jobs",
+              "cronjobs"
+            ],
+            "verbs": [
+              "get",
+              "list",
+              "watch",
+              "create",
+              "update",
+              "patch",
+              "delete"
+            ]
+          },
+          {
+            "apiGroups": [
+              ""
+            ],
+            "resources": [
+              "pods",
+              "pods/log",
+              "events"
+            ],
+            "verbs": [
+              "get",
+              "list",
+              "watch"
+            ]
+          }
+        ]
+      }
+    ],
+    "bindings": [
+      {
+        "kind": "RoleBinding",
+        "name": "${team}-batch-operators",
+        "namespaces": [
+          "${namespace}"
+        ],
+        "annotations": {
+          "rbac-builder/owner": "${team}",
+          "rbac-builder/description": "batch job management in ${namespace} for ${team}"
+        },
+        "roleRef": {
+          "kind": "Role",
+          "name": "${team}-batch-operator"
+        },
+        "subjects": [
+          {
+            "kind": "Group",
+            "name": "${team}-batch-operators"
+          }
+        ]
+      }
+    ],
+    "serviceAccounts": []
+  }
+}

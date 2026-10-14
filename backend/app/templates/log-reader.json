@@ -1,0 +1,63 @@
+{
+  "title": "Log reader",
+  "description": "kubectl logs in one namespace: read pods and their logs, no exec, no port-forward.",
+  "variables": [
+    "team",
+    "namespace"
+  ],
+  "bundle": {
+    "roles": [
+      {
+        "kind": "Role",
+        "metadata": {
+          "name": "${team}-log-reader",
+          "namespace": "${namespace}",
+          "annotations": {
+            "rbac-builder/owner": "${team}",
+            "rbac-builder/description": "pod log access in ${namespace} for ${team}"
+          }
+        },
+        "rules": [
+          {
+            "apiGroups": [
+              ""
+            ],
+            "resources": [
+              "pods",
+              "pods/log"
+            ],
+            "verbs": [
+              "get",
+              "list",
+              "watch"
+            ]
+          }
+        ]
+      }
+    ],
+    "bindings": [
+      {
+        "kind": "RoleBinding",
+        "name": "${team}-log-readers",
+        "namespaces": [
+          "${namespace}"
+        ],
+        "annotations": {
+          "rbac-builder/owner": "${team}",
+          "rbac-builder/description": "pod log access in ${namespace} for ${team}"
+        },
+        "roleRef": {
+          "kind": "Role",
+          "name": "${team}-log-reader"
+        },
+        "subjects": [
+          {
+            "kind": "Group",
+            "name": "${team}-log-readers"
+          }
+        ]
+      }
+    ],
+    "serviceAccounts": []
+  }
+}

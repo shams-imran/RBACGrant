@@ -68,9 +68,37 @@ def test_templates(client):
     templates = client.get("/api/templates").json()["templates"]
     ids = {t["id"] for t in templates}
     assert {"developer", "readonly-auditor", "ci-deployer", "monitoring",
-            "namespace-admin", "operator-full", "operator-restricted"} <= ids
+            "namespace-admin", "operator-full", "operator-restricted",
+            "namespace-viewer", "log-reader", "port-forwarder", "pod-debugger",
+            "incident-responder", "batch-job-operator", "secret-manager",
+            "network-admin", "capacity-manager", "namespace-provisioner"} <= ids
     full = client.get("/api/templates/operator-full").json()
     assert "cluster-admin" in full["description"]
+
+
+def test_every_template_bundle_is_valid(client):
+    """Each shipped template, with its variables filled, must pass Bundle
+    validation, generate manifests, and never hard-block on apply (except the
+    operator templates, whose objects are deliberately UI-immutable)."""
+    import json as _json
+    from app.models.rbac import Bundle
+    from app.generators.manifests import bundle_manifests
+    from app.linter.guardrails import evaluate_guardrails
+
+    login(client)
+    sample = {"team": "payments", "namespace": "shop", "env": "staging"}
+    for t in client.get("/api/templates").json()["templates"]:
+        full = client.get(f"/api/templates/{t['id']}").json()
+        raw = _json.dumps(full["bundle"])
+        for k, v in sample.items():
+            raw = raw.replace("${%s}" % k, v)
+        assert "${" not in raw, f"{t['id']}: undeclared variable in bundle"
+        bundle = Bundle.model_validate(_json.loads(raw))
+        manifests = bundle_manifests(bundle)
+        assert manifests, f"{t['id']}: empty bundle"
+        decision = evaluate_guardrails(manifests)
+        if not t["id"].startswith("operator"):
+            assert not decision.hard_blocks, f"{t['id']}: {decision.hard_blocks}"
 
 
 def test_import_yaml(client):

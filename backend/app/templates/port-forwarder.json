@@ -1,0 +1,73 @@
+{
+  "title": "Port-forward only",
+  "description": "kubectl port-forward to pods in one namespace (reach an in-cluster DB or dashboard), without exec or logs.",
+  "variables": [
+    "team",
+    "namespace"
+  ],
+  "bundle": {
+    "roles": [
+      {
+        "kind": "Role",
+        "metadata": {
+          "name": "${team}-port-forwarder",
+          "namespace": "${namespace}",
+          "annotations": {
+            "rbac-builder/owner": "${team}",
+            "rbac-builder/description": "port-forward into ${namespace} for ${team}"
+          }
+        },
+        "rules": [
+          {
+            "apiGroups": [
+              ""
+            ],
+            "resources": [
+              "pods",
+              "services"
+            ],
+            "verbs": [
+              "get",
+              "list"
+            ]
+          },
+          {
+            "apiGroups": [
+              ""
+            ],
+            "resources": [
+              "pods/portforward"
+            ],
+            "verbs": [
+              "create"
+            ]
+          }
+        ]
+      }
+    ],
+    "bindings": [
+      {
+        "kind": "RoleBinding",
+        "name": "${team}-port-forwarders",
+        "namespaces": [
+          "${namespace}"
+        ],
+        "annotations": {
+          "rbac-builder/owner": "${team}",
+          "rbac-builder/description": "port-forward into ${namespace} for ${team}"
+        },
+        "roleRef": {
+          "kind": "Role",
+          "name": "${team}-port-forwarder"
+        },
+        "subjects": [
+          {
+            "kind": "Group",
+            "name": "${team}-port-forwarders"
+          }
+        ]
+      }
+    ],
+    "serviceAccounts": []
+  }
+}

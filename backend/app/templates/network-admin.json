@@ -1,0 +1,93 @@
+{
+  "title": "Network admin (namespace)",
+  "description": "Manage Ingresses and NetworkPolicies in one namespace; read Services and EndpointSlices to wire them up.",
+  "variables": [
+    "team",
+    "namespace"
+  ],
+  "bundle": {
+    "roles": [
+      {
+        "kind": "Role",
+        "metadata": {
+          "name": "${team}-network-admin",
+          "namespace": "${namespace}",
+          "annotations": {
+            "rbac-builder/owner": "${team}",
+            "rbac-builder/description": "ingress and network policy management in ${namespace} for ${team}"
+          }
+        },
+        "rules": [
+          {
+            "apiGroups": [
+              "networking.k8s.io"
+            ],
+            "resources": [
+              "ingresses",
+              "networkpolicies"
+            ],
+            "verbs": [
+              "get",
+              "list",
+              "watch",
+              "create",
+              "update",
+              "patch",
+              "delete"
+            ]
+          },
+          {
+            "apiGroups": [
+              ""
+            ],
+            "resources": [
+              "services"
+            ],
+            "verbs": [
+              "get",
+              "list",
+              "watch"
+            ]
+          },
+          {
+            "apiGroups": [
+              "discovery.k8s.io"
+            ],
+            "resources": [
+              "endpointslices"
+            ],
+            "verbs": [
+              "get",
+              "list",
+              "watch"
+            ]
+          }
+        ]
+      }
+    ],
+    "bindings": [
+      {
+        "kind": "RoleBinding",
+        "name": "${team}-network-admins",
+        "namespaces": [
+          "${namespace}"
+        ],
+        "annotations": {
+          "rbac-builder/owner": "${team}",
+          "rbac-builder/description": "ingress and network policy management in ${namespace} for ${team}"
+        },
+        "roleRef": {
+          "kind": "Role",
+          "name": "${team}-network-admin"
+        },
+        "subjects": [
+          {
+            "kind": "Group",
+            "name": "${team}-network-admins"
+          }
+        ]
+      }
+    ],
+    "serviceAccounts": []
+  }
+}

@@ -1,0 +1,76 @@
+{
+  "title": "Pod debugger (exec)",
+  "description": "Interactive debugging in one namespace: logs, events, exec and port-forward. Exec is code execution in the workload \u2014 expect a high-risk badge.",
+  "variables": [
+    "team",
+    "namespace"
+  ],
+  "bundle": {
+    "roles": [
+      {
+        "kind": "Role",
+        "metadata": {
+          "name": "${team}-pod-debugger",
+          "namespace": "${namespace}",
+          "annotations": {
+            "rbac-builder/owner": "${team}",
+            "rbac-builder/description": "interactive debugging in ${namespace} for ${team}"
+          }
+        },
+        "rules": [
+          {
+            "apiGroups": [
+              ""
+            ],
+            "resources": [
+              "pods",
+              "pods/log",
+              "events"
+            ],
+            "verbs": [
+              "get",
+              "list",
+              "watch"
+            ]
+          },
+          {
+            "apiGroups": [
+              ""
+            ],
+            "resources": [
+              "pods/exec",
+              "pods/portforward"
+            ],
+            "verbs": [
+              "create"
+            ]
+          }
+        ]
+      }
+    ],
+    "bindings": [
+      {
+        "kind": "RoleBinding",
+        "name": "${team}-pod-debuggers",
+        "namespaces": [
+          "${namespace}"
+        ],
+        "annotations": {
+          "rbac-builder/owner": "${team}",
+          "rbac-builder/description": "interactive debugging in ${namespace} for ${team}"
+        },
+        "roleRef": {
+          "kind": "Role",
+          "name": "${team}-pod-debugger"
+        },
+        "subjects": [
+          {
+            "kind": "Group",
+            "name": "${team}-pod-debuggers"
+          }
+        ]
+      }
+    ],
+    "serviceAccounts": []
+  }
+}

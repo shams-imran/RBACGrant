@@ -1,0 +1,132 @@
+{
+  "title": "Incident responder (on-call)",
+  "description": "On-call access in one namespace: read workloads, logs and events; restart by deleting pods or rollout-restarting; exec for live diagnosis. No config or secret edits.",
+  "variables": [
+    "team",
+    "namespace"
+  ],
+  "bundle": {
+    "roles": [
+      {
+        "kind": "Role",
+        "metadata": {
+          "name": "${team}-incident-responder",
+          "namespace": "${namespace}",
+          "annotations": {
+            "rbac-builder/owner": "${team}",
+            "rbac-builder/description": "on-call incident response in ${namespace} for ${team}"
+          }
+        },
+        "rules": [
+          {
+            "apiGroups": [
+              ""
+            ],
+            "resources": [
+              "pods",
+              "pods/log",
+              "events",
+              "services",
+              "endpoints",
+              "configmaps"
+            ],
+            "verbs": [
+              "get",
+              "list",
+              "watch"
+            ]
+          },
+          {
+            "apiGroups": [
+              "apps"
+            ],
+            "resources": [
+              "deployments",
+              "replicasets",
+              "statefulsets",
+              "daemonsets"
+            ],
+            "verbs": [
+              "get",
+              "list",
+              "watch"
+            ]
+          },
+          {
+            "apiGroups": [
+              "batch"
+            ],
+            "resources": [
+              "jobs",
+              "cronjobs"
+            ],
+            "verbs": [
+              "get",
+              "list",
+              "watch"
+            ]
+          },
+          {
+            "apiGroups": [
+              ""
+            ],
+            "resources": [
+              "pods"
+            ],
+            "verbs": [
+              "delete"
+            ]
+          },
+          {
+            "apiGroups": [
+              "apps"
+            ],
+            "resources": [
+              "deployments",
+              "statefulsets",
+              "daemonsets"
+            ],
+            "verbs": [
+              "patch"
+            ]
+          },
+          {
+            "apiGroups": [
+              ""
+            ],
+            "resources": [
+              "pods/exec"
+            ],
+            "verbs": [
+              "create"
+            ]
+          }
+        ]
+      }
+    ],
+    "bindings": [
+      {
+        "kind": "RoleBinding",
+        "name": "${team}-incident-responders",
+        "namespaces": [
+          "${namespace}"
+        ],
+        "annotations": {
+          "rbac-builder/owner": "${team}",
+          "rbac-builder/description": "on-call incident response in ${namespace} for ${team}"
+        },
+        "roleRef": {
+          "kind": "Role",
+          "name": "${team}-incident-responder"
+        },
+        "subjects": [
+          {
+            "kind": "Group",
+            "name": "${team}-oncall"
+          }
+        ]
+      }
+    ],
+    "serviceAccounts": []
+  }
+}

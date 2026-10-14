@@ -1,0 +1,77 @@
+{
+  "title": "Namespace provisioner (platform)",
+  "description": "Platform-team ClusterRole: create and list namespaces and manage ResourceQuotas and LimitRanges in any of them. Pair with namespace-admin grants per team.",
+  "variables": [
+    "team"
+  ],
+  "bundle": {
+    "roles": [
+      {
+        "kind": "ClusterRole",
+        "metadata": {
+          "name": "${team}-namespace-provisioner",
+          "annotations": {
+            "rbac-builder/owner": "${team}",
+            "rbac-builder/description": "namespace provisioning and quota management for ${team}"
+          }
+        },
+        "rules": [
+          {
+            "apiGroups": [
+              ""
+            ],
+            "resources": [
+              "namespaces"
+            ],
+            "verbs": [
+              "get",
+              "list",
+              "watch",
+              "create"
+            ]
+          },
+          {
+            "apiGroups": [
+              ""
+            ],
+            "resources": [
+              "resourcequotas",
+              "limitranges"
+            ],
+            "verbs": [
+              "get",
+              "list",
+              "watch",
+              "create",
+              "update",
+              "patch",
+              "delete"
+            ]
+          }
+        ]
+      }
+    ],
+    "bindings": [
+      {
+        "kind": "ClusterRoleBinding",
+        "name": "${team}-namespace-provisioners",
+        "namespaces": [],
+        "annotations": {
+          "rbac-builder/owner": "${team}",
+          "rbac-builder/description": "namespace provisioning and quota management for ${team}"
+        },
+        "roleRef": {
+          "kind": "ClusterRole",
+          "name": "${team}-namespace-provisioner"
+        },
+        "subjects": [
+          {
+            "kind": "Group",
+            "name": "${team}-platform"
+          }
+        ]
+      }
+    ],
+    "serviceAccounts": []
+  }
+}

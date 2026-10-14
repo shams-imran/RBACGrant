@@ -1,0 +1,108 @@
+{
+  "title": "Capacity manager (scaling)",
+  "description": "Scale workloads in one namespace: the scale subresource of Deployments and StatefulSets plus HorizontalPodAutoscalers \u2014 without touching pod specs.",
+  "variables": [
+    "team",
+    "namespace"
+  ],
+  "bundle": {
+    "roles": [
+      {
+        "kind": "Role",
+        "metadata": {
+          "name": "${team}-capacity-manager",
+          "namespace": "${namespace}",
+          "annotations": {
+            "rbac-builder/owner": "${team}",
+            "rbac-builder/description": "workload scaling in ${namespace} for ${team}"
+          }
+        },
+        "rules": [
+          {
+            "apiGroups": [
+              "apps"
+            ],
+            "resources": [
+              "deployments",
+              "replicasets",
+              "statefulsets"
+            ],
+            "verbs": [
+              "get",
+              "list",
+              "watch"
+            ]
+          },
+          {
+            "apiGroups": [
+              "apps"
+            ],
+            "resources": [
+              "deployments/scale",
+              "statefulsets/scale"
+            ],
+            "verbs": [
+              "get",
+              "update",
+              "patch"
+            ]
+          },
+          {
+            "apiGroups": [
+              "autoscaling"
+            ],
+            "resources": [
+              "horizontalpodautoscalers"
+            ],
+            "verbs": [
+              "get",
+              "list",
+              "watch",
+              "create",
+              "update",
+              "patch",
+              "delete"
+            ]
+          },
+          {
+            "apiGroups": [
+              ""
+            ],
+            "resources": [
+              "pods"
+            ],
+            "verbs": [
+              "get",
+              "list",
+              "watch"
+            ]
+          }
+        ]
+      }
+    ],
+    "bindings": [
+      {
+        "kind": "RoleBinding",
+        "name": "${team}-capacity-managers",
+        "namespaces": [
+          "${namespace}"
+        ],
+        "annotations": {
+          "rbac-builder/owner": "${team}",
+          "rbac-builder/description": "workload scaling in ${namespace} for ${team}"
+        },
+        "roleRef": {
+          "kind": "Role",
+          "name": "${team}-capacity-manager"
+        },
+        "subjects": [
+          {
+            "kind": "Group",
+            "name": "${team}-capacity-managers"
+          }
+        ]
+      }
+    ],
+    "serviceAccounts": []
+  }
+}
