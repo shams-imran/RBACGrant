@@ -1,9 +1,6 @@
 # RBACGrant
 
-[![Source](https://img.shields.io/badge/source-GitHub-181717?logo=github)](https://github.com/shams-imran/RBACGrant)
-[![Release](https://img.shields.io/github/v/release/shams-imran/RBACGrant?color=2496ED)](https://github.com/shams-imran/RBACGrant/releases)
-[![CI](https://img.shields.io/github/actions/workflow/status/shams-imran/RBACGrant/ci.yml?branch=main&label=CI)](https://github.com/shams-imran/RBACGrant/actions)
-[![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/shams-imran/RBACGrant/blob/main/LICENSE)
+[![Source](https://img.shields.io/badge/source-GitHub-181717?logo=github)](https://github.com/shams-imran/RBACGrant) [![Release](https://img.shields.io/github/v/release/shams-imran/RBACGrant?color=2496ED)](https://github.com/shams-imran/RBACGrant/releases) [![CI](https://img.shields.io/github/actions/workflow/status/shams-imran/RBACGrant/ci.yml?branch=main&label=CI)](https://github.com/shams-imran/RBACGrant/actions) [![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/shams-imran/RBACGrant/blob/main/LICENSE)
 
 **A web GUI for Kubernetes RBAC** — build Roles and RoleBindings visually or
 from 17 starter templates, lint them against the RBAC good-practices rules,
