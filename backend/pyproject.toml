@@ -33,6 +33,13 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 include = ["app*"]
 
+[tool.setuptools.package-data]
+# Without these the wheel ships only .py files: a pip-installed rbac-ui
+# crashed on the missing common-password list, and the API would serve zero
+# starter templates. The image's server dodged it only because it runs from
+# the copied source tree, not from site-packages.
+app = ["auth/common_passwords.txt", "templates/*.json"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"

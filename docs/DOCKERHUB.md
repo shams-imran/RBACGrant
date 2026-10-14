@@ -76,26 +76,99 @@ cosign verify \
   shamsimran/rbacgrant:1.1.0
 ```
 
-## Running it for real
+## Running it for real (persistent, with storage)
 
-Hardened [Compose and Kubernetes manifests](https://github.com/shams-imran/RBACGrant/tree/main/deploy)
-ship in the repo — read-only rootfs, all capabilities dropped, tmpfs scratch,
-encrypted cluster store on a volume. The
+Saved clusters live in an AES-GCM-encrypted store on a volume, locked by a
+32-byte key that must live **outside** the data volume. One-time setup:
+
+```bash
+# generate the store key — keep a backup; a lost key means re-adding every cluster
+mkdir -p ~/.config/rbacgrant
+head -c 32 /dev/urandom | base64 > ~/.config/rbacgrant/store.key
+chmod 600 ~/.config/rbacgrant/store.key
+
+# hash the admin password (prompts twice, prints the hash)
+docker run --rm -it --entrypoint python shamsimran/rbacgrant:1.1.0 -m app.cli hash-password
+```
+
+### docker run
+
+```bash
+docker run -d --name rbacgrant \
+  -p 127.0.0.1:8080:8080 \
+  -e RBAC_UI_ADMIN_PASSWORD_HASH='$argon2id$...paste-your-hash-here...' \
+  -e RBAC_UI_ALLOW_INSECURE_HTTP=true \
+  -e RBAC_UI_CLUSTER_STORE=local \
+  -e RBAC_UI_STORE_KEY_REF=file:/etc/rbac-ui/store.key \
+  -e RBAC_UI_AUDIT_LOG_FILE=/data/audit.log \
+  -v rbacgrant-data:/data \
+  -v ~/.config/rbacgrant/store.key:/etc/rbac-ui/store.key:ro \
+  --restart unless-stopped \
+  shamsimran/rbacgrant:1.1.0
+```
+
+`rbacgrant-data` keeps the encrypted cluster store and the audit log across
+restarts and upgrades; the key is mounted read-only from the host. Keep the
+single quotes around the hash — it contains `$`.
+
+> Mapping a different host port? Set `RBAC_UI_PUBLIC_URL` to match
+> (e.g. `-p 127.0.0.1:9090:8080` needs
+> `-e RBAC_UI_PUBLIC_URL=http://127.0.0.1:9090`), or logins fail the
+> cross-origin check with a 403.
+
+### docker compose
+
+```yaml
+services:
+  rbacgrant:
+    image: shamsimran/rbacgrant:1.1.0
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"     # loopback only — TLS proxy in front for real use
+    env_file: .env                # RBAC_UI_* settings incl. the password hash —
+                                  # an env_file avoids compose eating the $ in it
+    environment:
+      RBAC_UI_ALLOW_INSECURE_HTTP: "true"
+      RBAC_UI_CLUSTER_STORE: local
+      RBAC_UI_STORE_KEY_REF: file:/etc/rbac-ui/store.key
+      RBAC_UI_AUDIT_LOG_FILE: /data/audit.log
+    volumes:
+      - rbacgrant-data:/data                               # encrypted store + audit log
+      - ./store.key:/etc/rbac-ui/store.key:ro              # AES key, outside the data volume
+    # hardening (optional but free):
+    read_only: true
+    tmpfs:
+      - /run/rbac-ui:rw,noexec,nosuid,size=16m,mode=0700,uid=10001,gid=10001
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+volumes:
+  rbacgrant-data:
+```
+
+A fuller hardened Compose file and a Kubernetes manifest ship in the repo's
+[`deploy/`](https://github.com/shams-imran/RBACGrant/tree/main/deploy)
+directory, and the
 [README](https://github.com/shams-imran/RBACGrant#running-it-properly) covers
-the password hash, the store key and Vault.
+TLS, Vault integration and multi-user setup.
 
-Most-touched settings (full list in
-[`.env.example`](https://github.com/shams-imran/RBACGrant/blob/main/.env.example)):
+### Configuration
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `RBAC_UI_ADMIN_PASSWORD_HASH` | — | Argon2id hash (`rbac-ui hash-password`); **required** |
-| `RBAC_UI_PUBLIC_URL` | `http://127.0.0.1:8080` | URL users open; drives Origin checks + cookie flags |
-| `RBAC_UI_CLUSTER_STORE` | `none` | `none` · `local` (AES-GCM) · `vault` |
-| `RBAC_UI_STORE_KEY_REF` | — | key ref for the local store |
-| `RBAC_UI_MAX_TOKEN_TTL` / `MAX_CERT_TTL` | `7d` | hard caps on issued credentials |
-| `RBAC_UI_ALLOWED_API_SERVERS` | — | allowlist of registrable API servers |
-| `RBAC_UI_READ_ONLY` | `false` | global kill switch for cluster writes |
+Full commented reference:
+[`.env.example`](https://github.com/shams-imran/RBACGrant/blob/main/.env.example).
+
+| Variable | Required | Default | Purpose |
+|---|---|---|---|
+| `RBAC_UI_ADMIN_PASSWORD_HASH` | **yes** | — | Argon2id hash; there is no default password |
+| `RBAC_UI_ALLOW_INSECURE_HTTP` | **yes, in a container** | `false` | acknowledges TLS terminates outside (or nowhere, on loopback) |
+| `RBAC_UI_CLUSTER_STORE` | to save clusters | `none` | `none` · `local` (AES-GCM) · `vault` |
+| `RBAC_UI_STORE_KEY_REF` | with `local` store | — | e.g. `file:/etc/rbac-ui/store.key`; 32-byte base64, 0600 |
+| `RBAC_UI_PUBLIC_URL` | off-loopback | `http://127.0.0.1:8080` | exact URL users open — Origin checks and cookie flags derive from it |
+| `RBAC_UI_ALLOWED_HOSTS` | off-loopback | `localhost,127.0.0.1` | Host-header allowlist (anti DNS-rebinding) |
+| `RBAC_UI_AUDIT_LOG_FILE` | recommended | — | JSON-lines audit trail, e.g. `/data/audit.log` |
+| `RBAC_UI_MAX_TOKEN_TTL` / `MAX_CERT_TTL` | no | `7d` | hard caps on issued credentials |
+| `RBAC_UI_ALLOWED_API_SERVERS` | no | — | allowlist of registrable API servers |
+| `RBAC_UI_READ_ONLY` | no | `false` | global kill switch for cluster writes |
 
 ---
 

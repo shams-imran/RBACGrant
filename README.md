@@ -215,7 +215,7 @@ would rather you store an Argon2id hash than a plaintext password.
 .venv/bin/rbac-ui hash-password
 
 # or with the container
-docker run --rm -it shamsimran/rbacgrant:latest -m app.cli hash-password
+docker run --rm -it --entrypoint python shamsimran/rbacgrant:latest -m app.cli hash-password
 ```
 
 It prompts twice (no echo), enforces the password policy, and prints something
