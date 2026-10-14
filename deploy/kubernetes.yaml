@@ -72,7 +72,7 @@ spec:
         - name: rbacgrant
           # Pinned by digest: tags move, digests do not. Verify it with
           # cosign before rolling it out (see docs/RELEASING.md).
-          image: shamsimran/rbacgrant@sha256:416698db9b79c55af91629b6c3863338213bf31523e10d92c140e5df9d66668e
+          image: shamsimran/rbacgrant@sha256:ffe990c3d7f02a3d6259b2a4149af2fb60808398bc32e14076b0b9cfe9cd7fa9
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
