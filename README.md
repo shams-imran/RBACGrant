@@ -44,8 +44,9 @@ dry-run, apply, live RBAC review and `can-i`.
 - [Screenshots](#screenshots)
 - [Running it properly](#running-it-properly)
   - [Generating the admin password hash](#generating-the-admin-password-hash)
+  - [The encrypted cluster store](#the-encrypted-cluster-store)
   - [Using HashiCorp Vault](#using-hashicorp-vault)
-  - [Docker](#docker)
+  - [Hardened docker run](#hardened-docker-run)
 - [User manual](#user-manual)
   - [Before you create a binding](#before-you-create-a-binding)
   - [Connecting a cluster](#connecting-a-cluster)
@@ -177,7 +178,7 @@ SubjectAccessReview without the kubectl incantation.
 
 **Starter templates**
 
-Seven reviewed starting points, including the operator identities.
+Seventeen reviewed starting points, including the operator identities.
 
 </td>
 </tr>
@@ -264,51 +265,119 @@ impersonating another cluster.
 
 Maintenance:
 
-```bash 
+```bash
 rbac-ui store verify                        # does every stored file still decrypt?
 rbac-ui store rotate-key                    # re-encrypt everything under a new key
 rbac-ui store migrate --from local --to vault
 ```
 
-#### Decrypting a stored file by hand
+### Decrypting a stored file by hand
 
-Disaster recovery needs nothing beyond the key and Python. Each
-`<name>.kcfg.enc` under `<DATA_DIR>/clusters/` is a 33-byte header — `KRBC`
+Disaster recovery needs nothing beyond the key and Python.
+
+<details>
+<summary>File format and a standalone decryptor script</summary>
+
+Each `<name>.kcfg.enc` under `<DATA_DIR>/clusters/` is a 33-byte header — `KRBC`
 magic, format version, a 16-byte key fingerprint (SHA-256 of the key,
 truncated), the 12-byte GCM nonce — followed by the AES-256-GCM ciphertext,
 with the cluster name as the associated data:
 
 ```python
-# decrypt_kcfg.py — usage: python decrypt_kcfg.py store.key clusters/<name>.kcfg.enc
-import base64, hashlib, json, struct, sys
+# decrypt_kcfg.py — recover kubeconfigs from the encrypted store.
+#   one cluster:  python decrypt_kcfg.py store.key clusters/<name>.kcfg.enc
+#   whole store:  python decrypt_kcfg.py store.key clusters/ recovered/
+import base64, hashlib, json, pathlib, struct, sys
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # pip install cryptography
 
-keyfile, encfile = sys.argv[1], sys.argv[2]
-key = base64.b64decode(open(keyfile).read().strip())
-name = encfile.rsplit("/", 1)[-1].removesuffix(".kcfg.enc")   # AAD = cluster name
+def decrypt(key: bytes, path: pathlib.Path) -> tuple[str, dict]:
+    name = path.name.removesuffix(".kcfg.enc")                 # AAD = cluster name
+    blob = path.read_bytes()
+    magic, version, key_id, nonce = struct.unpack(">4sB16s12s", blob[:33])
+    assert magic == b"KRBC" and version == 1, "unknown format"
+    assert key_id == hashlib.sha256(key).digest()[:16], "wrong key (key_id mismatch)"
+    return name, json.loads(AESGCM(key).decrypt(nonce, blob[33:], name.encode()))
 
-blob = open(encfile, "rb").read()
-magic, version, key_id, nonce = struct.unpack(">4sB16s12s", blob[:33])
-assert magic == b"KRBC" and version == 1, "unknown format"
-assert key_id == hashlib.sha256(key).digest()[:16], "wrong key (key_id mismatch)"
-
-payload = json.loads(AESGCM(key).decrypt(nonce, blob[33:], name.encode()))
-print(payload["kubeconfig"])          # payload["metadata"] has the rest
+key = base64.b64decode(open(sys.argv[1]).read().strip())
+target = pathlib.Path(sys.argv[2])
+if target.is_file():                           # one file: kubeconfig to stdout
+    print(decrypt(key, target)[1]["kubeconfig"])
+else:                                          # whole clusters/ dir: one file each
+    outdir = pathlib.Path(sys.argv[3]) if len(sys.argv) > 3 else pathlib.Path("recovered")
+    outdir.mkdir(parents=True, exist_ok=True)
+    for f in sorted(target.glob("*.kcfg.enc")):
+        name, payload = decrypt(key, f)
+        out = outdir / f"{name}.kubeconfig.yaml"
+        out.write_text(payload["kubeconfig"])  # payload["metadata"] has the rest
+        out.chmod(0o600)
+        print(f"recovered {name} -> {out}")
 ```
 
 The container image already ships `cryptography`, so with the compose
 deployment this runs against the live volumes:
 
+
+To recover **every** cluster at once (the `.kcfg.enc` file names are the
+cluster names; `index.json` is just that list), mount an output directory and
+pass the clusters directory instead of one file:
+
 ```bash
-docker compose run --rm --entrypoint python \
-  -v "$(pwd)/decrypt_kcfg.py:/tmp/decrypt_kcfg.py:ro" \
-  rbacgrant /tmp/decrypt_kcfg.py /etc/rbac-ui/store.key /data/clusters/<name>.kcfg.enc
+docker compose run --rm --no-deps --entrypoint python \
+  -v "$PWD/decrypt_kcfg.py:/tmp/decrypt_kcfg.py:ro" \
+  -v "$PWD/recovered:/out" \
+  rbacgrant /tmp/decrypt_kcfg.py /etc/rbac-ui/store.key /data/clusters /out
+```
+
+No working compose file at hand? Plain `docker run` does the same — only the
+key needs Docker at all, since it lives in the named volume
+`<project>_rbacgrant-key` (`<project>` is the compose project, by default the
+directory name; `docker volume ls` shows it). The data directory is a normal
+host path, and every cluster is exported to `./recovered/` on the host,
+mounted in the container at `/out`:
+
+```bash
+# decrypt_kcfg.py must exist as a FILE before this runs — mounting a missing
+# path makes Docker create an empty directory there instead. The volume name
+# must be exact (docker volume ls): docker run silently creates a NEW empty
+# volume for an unknown name, and the key then "does not exist"
+# <project/directory>_rbacgrant-key: key store volume in docker. To find `docker volume ls`
+docker run --rm \
+  -v <project/directory>_rbacgrant-key:/etc/rbac-ui:ro \
+  -v "$PWD/data:/data:ro" \
+  -v "$PWD/decrypt_kcfg.py:/tmp/decrypt_kcfg.py:ro" \
+  -v "$PWD/recovered:/out" \
+  --entrypoint python shamsimran/rbacgrant:latest \
+  /tmp/decrypt_kcfg.py /etc/rbac-ui/store.key /data/clusters /out
+```
+
+Or take Docker out of the loop entirely — the full recovery, step by step:
+
+```bash
+# 1. save the script above as decrypt_kcfg.py and install its one dependency
+pip install cryptography
+
+# 2. pull the key out of the volume (it survives a deleted compose file);
+#    sanity check: the file is 44 bytes of base64
+docker run --rm -v <project>_rbacgrant-key:/etc/rbac-ui:ro --entrypoint cat \
+  shamsimran/rbacgrant:latest /etc/rbac-ui/store.key > store.key && chmod 600 store.key
+
+# 3. decrypt
+python decrypt_kcfg.py store.key /path/to/data/clusters/<name>.kcfg.enc   # one
+python decrypt_kcfg.py store.key /path/to/data/clusters/ recovered/       # all
+
+# 4. verify a recovered kubeconfig actually works
+KUBECONFIG=recovered/<name>.kubeconfig.yaml kubectl auth whoami
+
+# 5. clean up — these are live credentials, and the encrypted store keeps everything
+rm store.key && rm -rf recovered
 ```
 
 Two things to know: the cluster name is authenticated, so a file renamed since
 it was written only decrypts under its original name, and a `key_id mismatch`
 means the file was encrypted under a different key — wrong key, not a corrupt
 file.
+
+</details>
 
 Back up the generated key — a lost key means re-adding every cluster:
 
@@ -391,7 +460,7 @@ Two things worth knowing:
   password source every 60s; when the value actually changes, that user's sessions
   are revoked. A Vault outage never revokes anything — the last known hash is kept.
 
-### Docker
+### Hardened docker run
 
 Published for **linux/amd64** and **linux/arm64** as a single manifest list —
 `docker pull` picks the right one automatically, on an Intel server or an
@@ -410,7 +479,7 @@ docker run -d --name rbacgrant \
   --cap-drop ALL \
   --security-opt no-new-privileges \
   --user 10001 \
-  shamsimran/rbacgrant:1.0.0
+  shamsimran/rbacgrant:1.1.0
 ```
 
 > Publish on **loopback only**. A bare `-p 8080:8080` binds every interface, and
@@ -682,8 +751,8 @@ workflow in which repository built it.
 
 ```bash
 # 1. pin to the digest, not the tag
-docker pull shamsimran/rbacgrant:1.0.0
-docker inspect --format='{{index .RepoDigests 0}}' shamsimran/rbacgrant:1.0.0
+docker pull shamsimran/rbacgrant:1.1.0
+docker inspect --format='{{index .RepoDigests 0}}' shamsimran/rbacgrant:1.1.0
 # shamsimran/rbacgrant@sha256:abc123...
 
 # 2. verify the signature
@@ -727,6 +796,8 @@ every variable with comments; the ones you'll actually touch:
 |---|---|---|
 | `RBAC_UI_BIND_ADDR` | `127.0.0.1` | keep it on loopback unless TLS is in front |
 | `RBAC_UI_PUBLIC_URL` | `http://127.0.0.1:8080` | used for Origin checks and cookie flags |
+| `RBAC_UI_ALLOW_INSECURE_HTTP` | `false` | required in a container: acknowledges TLS terminates in front (or nowhere, on loopback) |
+| `RBAC_UI_ALLOWED_HOSTS` | `localhost,127.0.0.1` | Host-header allowlist against DNS rebinding |
 | `RBAC_UI_AUTH_MODE` | `local` | `local` or `none` (loopback + no store only) |
 | `RBAC_UI_ADMIN_PASSWORD_HASH` | — | Argon2id hash; **quote it** |
 | `RBAC_UI_CLUSTER_STORE` | `none` | `none`, `local` or `vault` |
