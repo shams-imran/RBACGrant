@@ -9,12 +9,14 @@
 # Service in kubernetes.yaml instead.
 #
 # The app checks the browser's Host header and rejects cross-origin POSTs, so
-# the ConfigMap has to agree with the URL you actually open:
+# the ConfigMap has to agree with the URL you actually open. The defaults in
+# kubernetes.yaml already match this Service:
 #   RBAC_UI_PUBLIC_URL: http://localhost:30080     (compared WITH the port)
 #   RBAC_UI_ALLOWED_HOSTS: localhost,127.0.0.1     (compared WITHOUT the port)
-# Getting PUBLIC_URL wrong is quiet: the Host check passes, then the login POST
-# is rejected 403 cross-origin, or the session cookie is issued Secure and the
-# browser drops it over plain HTTP.
+# If you change the nodePort below or open the app by another name, change
+# both to match. Getting PUBLIC_URL wrong is quiet: the Host check passes,
+# then the login POST is rejected 403 cross-origin, or the session cookie is
+# issued Secure and the browser drops it over plain HTTP.
 apiVersion: v1
 kind: Service
 metadata:

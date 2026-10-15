@@ -9,11 +9,13 @@
 #     Defined below with an INSECURE DEFAULT key; replace it, see step 3.
 #
 # Before applying:
-#   1. Edit the two EDIT ME values in the ConfigMap (PUBLIC_URL,
-#      ALLOWED_HOSTS). The image is pulled from Docker Hub
-#      (shamsimran/rbacgrant:latest), so nothing to build — swap
-#      spec.template.spec.containers[0].image for your own registry if the
-#      cluster cannot reach Docker Hub.
+#   1. Check the two EDIT ME values in the ConfigMap (PUBLIC_URL,
+#      ALLOWED_HOSTS). The defaults match the local NodePort add-on
+#      (http://localhost:30080, see kubernetes-nodeport.yaml); for anything
+#      else set them to the URL users will actually open. The image is pulled
+#      from Docker Hub (shamsimran/rbacgrant:latest), so nothing to build —
+#      swap spec.template.spec.containers[0].image for your own registry if
+#      the cluster cannot reach Docker Hub.
 #   2. Change the default admin password in Secret rbacgrant-secrets below.
 #      It ships with the public default from .env.example (admin /
 #      changeme@123456!!), which is fine for a local try-out and nothing else.
@@ -24,14 +26,17 @@
 #      on that Secret — note that re-keying AFTER clusters are stored needs
 #      `rbac-ui store rotate-key`, not just a new value.
 #   4. kubectl apply -f deploy/kubernetes.yaml
+#      For a local try-out, add the NodePort Service:
+#        kubectl apply -f deploy/kubernetes.yaml -f deploy/kubernetes-nodeport.yaml
 #
 # Changing the ConfigMap does NOT restart the pod — follow an edit with
 #   kubectl -n rbacgrant rollout restart deploy/rbacgrant
 #
 # TLS: this manifest serves plain HTTP inside the cluster and expects TLS to
 # terminate at your Ingress / LoadBalancer (hence ALLOW_INSECURE_HTTP=true
-# below). Set RBAC_UI_PUBLIC_URL in the ConfigMap to the https:// URL users
-# will open, and RBAC_UI_ALLOWED_HOSTS to its hostname.
+# below). For a shared deployment, set RBAC_UI_PUBLIC_URL in the ConfigMap to
+# the https:// URL users will open and RBAC_UI_ALLOWED_HOSTS to its hostname;
+# the shipped defaults point at the plain-HTTP localhost NodePort instead.
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -60,11 +65,16 @@ metadata:
 data:
   ## ── server & web ────────────────────────────────────────────────────────
   RBAC_UI_PORT: "8080"
-  # EDIT ME — the https:// URL users open; cookies and redirects derive from it.
-  RBAC_UI_PUBLIC_URL: https://rbacgrant.example.com
-  # EDIT ME — allowed Host headers (blocks DNS rebinding). Keep localhost: the
-  # kubelet probes by pod IP and sends Host: localhost (see probes below).
-  RBAC_UI_ALLOWED_HOSTS: rbacgrant.example.com,localhost
+  # EDIT ME for a shared deployment — the exact URL users open, compared WITH
+  # the port; cookies, redirects and the cross-origin login check derive from
+  # it, so a mismatch quietly rejects every login 403. The default matches the
+  # local NodePort add-on (kubernetes-nodeport.yaml); for production set the
+  # https:// URL, e.g. https://rbacgrant.example.com.
+  RBAC_UI_PUBLIC_URL: http://localhost:30080
+  # EDIT ME for a shared deployment — allowed Host headers, compared WITHOUT
+  # the port (blocks DNS rebinding), e.g. rbacgrant.example.com,localhost.
+  # Keep localhost: the kubelet probes send Host: localhost (see probes below).
+  RBAC_UI_ALLOWED_HOSTS: localhost,127.0.0.1
   # Reverse-proxy IPs allowed to set X-Forwarded-* (for audit-log client IPs).
   # Set this to your ingress controller's pod CIDR to get real client IPs.
   #RBAC_UI_TRUSTED_PROXIES: 10.42.0.0/16
