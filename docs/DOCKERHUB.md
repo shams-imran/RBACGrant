@@ -100,11 +100,15 @@ chmod 600 ~/.config/rbacgrant/store.key
 > Docker creates the container, the bind mount below silently becomes an empty
 > *directory* and the server exits with
 > `secret file … does not exist` until you remove it and recreate the container.
+>> Default User `admin` Password is `changeme@123456!!`
+
+>> If want to use localhost(127.0.0.1) cluster,  MiniKube or Orbstack please use `-e RBAC_UI_ALLOW_LOOPBACK_API_SERVERS=true`
+
 
 ```bash
 docker run -d --name rbacgrant \
   -p 127.0.0.1:8080:8080 \
-  -e RBAC_UI_ADMIN_PASSWORD_HASH='$argon2id$...paste-your-hash-here...' \
+  -e RBAC_UI_ADMIN_PASSWORD_HASH='$argon2id$v=19$m=65536,t=3,p=4$x7aQQN80s0dPe0Z/xgRxGw$D3WGaHN56p+9pONp9Xp6bf/9NAt3jwE2q2JknKfHQb8' \
   -e RBAC_UI_ALLOW_INSECURE_HTTP=true \
   -e RBAC_UI_CLUSTER_STORE=local \
   -e RBAC_UI_STORE_KEY_REF=file:/etc/rbac-ui/store.key \
@@ -165,6 +169,7 @@ services:
                                   # an env_file avoids compose eating the $ in it
     environment:
       RBAC_UI_ALLOW_INSECURE_HTTP: "true"
+      RBAC_UI_ADMIN_PASSWORD_HASH: "$argon2id$v=19$m=65536,t=3,p=4$x7aQQN80s0dPe0Z/xgRxGw$D3WGaHN56p+9pONp9Xp6bf/9NAt3jwE2q2JknKfHQb8"
       RBAC_UI_CLUSTER_STORE: local
       RBAC_UI_STORE_KEY_REF: file:/etc/rbac-ui/store.key
       RBAC_UI_AUDIT_LOG_FILE: /data/audit.log

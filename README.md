@@ -264,7 +264,7 @@ impersonating another cluster.
 
 Maintenance:
 
-```bash
+```bash 
 rbac-ui store verify                        # does every stored file still decrypt?
 rbac-ui store rotate-key                    # re-encrypt everything under a new key
 rbac-ui store migrate --from local --to vault
