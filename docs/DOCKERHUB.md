@@ -76,19 +76,30 @@ cosign verify \
 ## Running it for real (persistent, with storage)
 
 Saved clusters live in an AES-GCM-encrypted store on a volume, locked by a
-32-byte key that must live **outside** the data volume. One-time setup:
+32-byte key that must live **outside** the data volume. With **docker compose**
+the key is generated for you on first start (see below); only the admin
+password hash is one-time setup:
 
 ```bash
-# generate the store key — keep a backup; a lost key means re-adding every cluster
-mkdir -p ~/.config/rbacgrant
-head -c 32 /dev/urandom | base64 > ~/.config/rbacgrant/store.key
-chmod 600 ~/.config/rbacgrant/store.key
-
 # hash the admin password (prompts twice, prints the hash)
 docker run --rm -it --entrypoint python shamsimran/rbacgrant:latest -m app.cli hash-password
 ```
 
 ### docker run
+
+With plain `docker run` you create the store key yourself, once:
+
+```bash
+# keep a backup; a lost key means re-adding every cluster
+mkdir -p ~/.config/rbacgrant
+head -c 32 /dev/urandom | base64 > ~/.config/rbacgrant/store.key
+chmod 600 ~/.config/rbacgrant/store.key
+```
+
+> Create the key **before** the first start. If the host file is missing when
+> Docker creates the container, the bind mount below silently becomes an empty
+> *directory* and the server exits with
+> `secret file … does not exist` until you remove it and recreate the container.
 
 ```bash
 docker run -d --name rbacgrant \
@@ -115,11 +126,39 @@ single quotes around the hash — it contains `$`.
 
 ### docker compose
 
+No key setup needed: the one-shot `keygen` service generates the store key into
+its own volume on the first `docker compose up` and never touches it again.
+
 ```yaml
 services:
+  # One-shot: create store.key if absent, otherwise do nothing. Runs as root
+  # only to write into the fresh volume and hand the file to UID 10001.
+  keygen:
+    image: shamsimran/rbacgrant:latest
+    restart: "no"
+    user: "0"
+    entrypoint: ["python", "-c"]
+    command:
+      - |
+        import base64, os, secrets
+        path = "/etc/rbac-ui/store.key"
+        if os.path.isfile(path) and os.path.getsize(path) > 0:
+            print("store key already present; leaving it alone")
+        else:
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as fh:
+                fh.write(base64.b64encode(secrets.token_bytes(32)).decode())
+            os.chown(path, 10001, 10001)
+            print("generated a new store key")
+    volumes:
+      - rbacgrant-key:/etc/rbac-ui
+
   rbacgrant:
     image: shamsimran/rbacgrant:latest
     restart: unless-stopped
+    depends_on:
+      keygen:
+        condition: service_completed_successfully
     ports:
       - "127.0.0.1:8080:8080"     # loopback only — TLS proxy in front for real use
     env_file: .env                # RBAC_UI_* settings incl. the password hash —
@@ -130,8 +169,8 @@ services:
       RBAC_UI_STORE_KEY_REF: file:/etc/rbac-ui/store.key
       RBAC_UI_AUDIT_LOG_FILE: /data/audit.log
     volumes:
-      - rbacgrant-data:/data                               # encrypted store + audit log
-      - ./store.key:/etc/rbac-ui/store.key:ro              # AES key, outside the data volume
+      - rbacgrant-data:/data             # encrypted store + audit log
+      - rbacgrant-key:/etc/rbac-ui:ro    # AES key, outside the data volume
     # hardening (optional but free):
     read_only: true
     tmpfs:
@@ -141,7 +180,19 @@ services:
 
 volumes:
   rbacgrant-data:
+  rbacgrant-key:
 ```
+
+Back up the generated key — a lost key means re-adding every cluster:
+
+```bash
+docker compose run --rm --entrypoint cat rbacgrant /etc/rbac-ui/store.key > store.key.backup
+```
+
+Prefer the key outside Docker's volume store entirely (so a copy of the volumes
+alone can't decrypt the data)? Create it on the host as in the `docker run`
+section and replace `rbacgrant-key` in **both** services with the key's host
+*directory*, e.g. `~/.config/rbacgrant`.
 
 A fuller hardened Compose file and a Kubernetes manifest ship in the repo's
 [`deploy/`](https://github.com/shams-imran/RBACGrant/tree/main/deploy)

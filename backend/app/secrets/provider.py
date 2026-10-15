@@ -122,6 +122,13 @@ class SecretProvider:
         path = Path(path_str)
         if not path.is_absolute():
             raise SecretRefError(f"file ref {ref!r} must use an absolute path")
+        if path.is_dir():
+            raise SecretRefError(
+                f"secret file for ref {ref!r} is a directory — a Docker bind "
+                "mount whose host file was missing at container creation? "
+                "Remove the directory and create the file, then recreate the "
+                "container"
+            )
         if not path.is_file():
             raise SecretRefError(f"secret file for ref {ref!r} does not exist")
         _check_file_perms(path, ref)

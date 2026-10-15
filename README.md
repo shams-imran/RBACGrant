@@ -374,7 +374,19 @@ For a real deployment put TLS in front of it and set `RBAC_UI_PUBLIC_URL` to the
 HTTPS URL — the server refuses plain HTTP off-loopback unless you explicitly set
 `RBAC_UI_ALLOW_INSECURE_HTTP=true` (for when you terminate TLS at a trusted proxy).
 
-Compose and Kubernetes manifests live in [`deploy/`](deploy/).
+Compose and Kubernetes manifests live in [`deploy/`](deploy/). The compose file
+manages the store key for you: a one-shot `keygen` service generates it into the
+`rbacgrant-key` volume on first start and never touches it again, so
+`docker compose up -d` is the whole setup. To keep the key outside Docker's
+volume store instead (so a copy of the volumes alone can't decrypt the data),
+point `RBACGRANT_KEY_DIR` at a host directory holding `store.key`.
+
+With plain `docker run` (no compose), create the key yourself before starting —
+`openssl rand -base64 32 > store.key && chmod 600 store.key` — and bind-mount it
+to the path `RBAC_UI_STORE_KEY_REF` names. Mind the classic Docker trap: if the
+host file doesn't exist when the container is created, Docker silently makes a
+*directory* at that path and the server exits with "secret file … does not
+exist" until you remove it.
 
 ---
 

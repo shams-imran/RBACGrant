@@ -2,19 +2,57 @@
 #
 #   cd deploy && docker compose up -d --build
 #
-# Configuration comes from the repo .env (env_file below). Two host paths are
-# tunable without editing this file:
+# The AES store key is managed automatically: on first start the one-shot
+# `keygen` service generates a 32-byte base64 key into the `rbacgrant-key`
+# volume; later starts find it present and leave it untouched. Nothing to
+# create by hand.
+#
+# Configuration comes from the repo .env (env_file below). Tunable without
+# editing this file:
 #   RBACGRANT_DATA_DIR   host dir for the encrypted cluster store (default ./data)
 #                        — point it at ~/.local/share/k8s-rbac-builder to reuse
 #                        the clusters already saved by `make run`
-#   RBACGRANT_STORE_KEY  host path of the AES store key (default
-#                        ~/.config/rbac-ui/store.key, matching .env)
+#   RBACGRANT_KEY_DIR    host dir holding (or to receive) store.key — keeps the
+#                        key outside Docker's volume store, so a copy of the
+#                        volumes alone cannot decrypt the data. Default: the
+#                        rbacgrant-key named volume. (Replaces the former
+#                        RBACGRANT_STORE_KEY, which pointed at the key *file*;
+#                        point this at the file's directory instead.)
 services:
+  # One-shot: create store.key if absent, otherwise do nothing. Runs as root
+  # only to write into the fresh volume and hand the file to UID 10001.
+  keygen:
+    image: shamsimran/rbacgrant:latest
+    build: ..
+    restart: "no"
+    user: "0"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    entrypoint: ["python", "-c"]
+    command:
+      - |
+        import base64, os, secrets
+        path = "/etc/rbac-ui/store.key"
+        if os.path.isfile(path) and os.path.getsize(path) > 0:
+            print("store key already present; leaving it alone")
+        else:
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as fh:
+                fh.write(base64.b64encode(secrets.token_bytes(32)).decode())
+            os.chown(path, 10001, 10001)
+            print("generated a new store key")
+    volumes:
+      - ${RBACGRANT_KEY_DIR:-rbacgrant-key}:/etc/rbac-ui
+
   rbacgrant:
     image: shamsimran/rbacgrant:latest
     build: ..
     restart: unless-stopped
     init: true
+    depends_on:
+      keygen:
+        condition: service_completed_successfully
     ports:
       - "127.0.0.1:8080:8080"
 
@@ -31,8 +69,8 @@ services:
     volumes:
       # Directory mount: the encrypted cluster store survives on the host.
       - ${RBACGRANT_DATA_DIR:-./data}:/data
-      # The AES key, read-only, mounted where STORE_KEY_REF above expects it.
-      - ${RBACGRANT_STORE_KEY:-~/.config/rbac-ui/store.key}:/etc/rbac-ui/store.key:ro
+      # The AES key dir, read-only, where STORE_KEY_REF above expects it.
+      - ${RBACGRANT_KEY_DIR:-rbacgrant-key}:/etc/rbac-ui:ro
 
     # Immutable container: only /data and the runtime tmpfs are writable.
     read_only: true
@@ -43,3 +81,6 @@ services:
       - no-new-privileges:true
     user: "10001"
     pids_limit: 256
+
+volumes:
+  rbacgrant-key:
