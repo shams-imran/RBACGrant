@@ -100,9 +100,10 @@ chmod 600 ~/.config/rbacgrant/store.key
 > Docker creates the container, the bind mount below silently becomes an empty
 > *directory* and the server exits with
 > `secret file … does not exist` until you remove it and recreate the container.
->> Default User `admin` Password is `changeme@123456!!`
 
->> If want to use localhost(127.0.0.1) cluster,  MiniKube or Orbstack please use `-e RBAC_UI_ALLOW_LOOPBACK_API_SERVERS=true`
+> Default User `admin` Password is `changeme@123456!!`
+
+> If want to use localhost(127.0.0.1) cluster,  MiniKube or Orbstack please use `-e RBAC_UI_ALLOW_LOOPBACK_API_SERVERS=true`
 
 
 ```bash

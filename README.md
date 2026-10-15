@@ -270,6 +270,52 @@ rbac-ui store rotate-key                    # re-encrypt everything under a new 
 rbac-ui store migrate --from local --to vault
 ```
 
+#### Decrypting a stored file by hand
+
+Disaster recovery needs nothing beyond the key and Python. Each
+`<name>.kcfg.enc` under `<DATA_DIR>/clusters/` is a 33-byte header — `KRBC`
+magic, format version, a 16-byte key fingerprint (SHA-256 of the key,
+truncated), the 12-byte GCM nonce — followed by the AES-256-GCM ciphertext,
+with the cluster name as the associated data:
+
+```python
+# decrypt_kcfg.py — usage: python decrypt_kcfg.py store.key clusters/<name>.kcfg.enc
+import base64, hashlib, json, struct, sys
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # pip install cryptography
+
+keyfile, encfile = sys.argv[1], sys.argv[2]
+key = base64.b64decode(open(keyfile).read().strip())
+name = encfile.rsplit("/", 1)[-1].removesuffix(".kcfg.enc")   # AAD = cluster name
+
+blob = open(encfile, "rb").read()
+magic, version, key_id, nonce = struct.unpack(">4sB16s12s", blob[:33])
+assert magic == b"KRBC" and version == 1, "unknown format"
+assert key_id == hashlib.sha256(key).digest()[:16], "wrong key (key_id mismatch)"
+
+payload = json.loads(AESGCM(key).decrypt(nonce, blob[33:], name.encode()))
+print(payload["kubeconfig"])          # payload["metadata"] has the rest
+```
+
+The container image already ships `cryptography`, so with the compose
+deployment this runs against the live volumes:
+
+```bash
+docker compose run --rm --entrypoint python \
+  -v "$(pwd)/decrypt_kcfg.py:/tmp/decrypt_kcfg.py:ro" \
+  rbacgrant /tmp/decrypt_kcfg.py /etc/rbac-ui/store.key /data/clusters/<name>.kcfg.enc
+```
+
+Two things to know: the cluster name is authenticated, so a file renamed since
+it was written only decrypts under its original name, and a `key_id mismatch`
+means the file was encrypted under a different key — wrong key, not a corrupt
+file.
+
+Back up the generated key — a lost key means re-adding every cluster:
+
+```bash
+docker compose run --rm --entrypoint cat rbacgrant /etc/rbac-ui/store.key > store.key.backup
+```
+
 ### Using HashiCorp Vault
 
 Vault can hold both the admin password and the cluster store. Any setting that

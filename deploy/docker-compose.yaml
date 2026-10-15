@@ -57,7 +57,7 @@ services:
       - "127.0.0.1:8080:8080"
 
     # All settings load from the repo .env …
-    env_file: ../.env
+    env_file: .env
     # … except the few that must differ inside a container (these override it):
     environment:
       RBAC_UI_BIND_ADDR: 0.0.0.0            # .env says 127.0.0.1; mapped ports need 0.0.0.0
